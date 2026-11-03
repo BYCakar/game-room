@@ -58,6 +58,8 @@ Timers a match starts should be `unref()`ed so they never keep the process alive
 
 A real-time game works the same way, only more often: `games/tanks/` steps its battle on a timer of its own and calls `onChange` after each step, so the players get a snapshot 20 times a second, and actions such as `input` come as often. Keep such snapshots small, call `onChange` only when something moved, and keep `preview` to what changes seldom (Tanks sends the score and armour, not positions), since every change of it goes to everyone looking at the list.
 
+`games/wordrace/` is the example of a game that hides things from the players themselves: each gets the colours of the other's guesses but not the letters, and nobody gets the word until the round is over. Its `snapshot(seat)` builds that seat's view, and the player facing a bot is also sent the bot's letters, since their browser has to play it.
+
 ## `client/index.js`
 
 Default-export an object with:

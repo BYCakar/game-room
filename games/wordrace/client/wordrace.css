@@ -1,0 +1,117 @@
+/* The word race: the boards and the keyboard, and beside them the score,
+   the rounds and the chat; on a narrow screen they go under them. Built on
+   the kit's cards (kit.css) and the site's colours, so it follows the theme.
+   The hints are the theme's accent (in its place), its amber (elsewhere)
+   and a muted grey (not in the word). */
+
+.wordrace, .wordraceThumb {
+  --correct: var(--accent);
+  --present: var(--busy);
+  --absent: color-mix(in srgb, var(--muted) 70%, var(--surface));
+}
+.wordrace {
+  --radius: 8px;
+  display: flex; gap: 16px; justify-content: center; align-items: flex-start;
+}
+.wordraceMain { flex: 1; min-width: 0; max-width: 620px; display: flex; flex-direction: column; gap: 10px; }
+.wordraceSide { width: 280px; flex: none; display: flex; flex-direction: column; gap: 16px; }
+
+.wordracePlayers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wordracePlayer { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+.wordracePlayer .dot { width: 8px; height: 8px; border: 2px solid var(--muted); }
+.wordracePlayer .dot.online { border-color: var(--accent); background: var(--accent); }
+.wordraceName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.wordraceWins { display: flex; gap: 3px; flex: none; }
+.wordraceWins i { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--muted); }
+.wordraceWins i.won { border-color: var(--busy); background: var(--busy); }
+.wordraceProgress { flex: none; min-width: 2.2em; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.wordraceProgress.found { color: var(--accent); font-weight: 700; }
+
+.wordraceClock { text-align: center; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; min-height: 1.3em; }
+.wordraceClock.big { color: var(--busy); }
+.wordraceClock.low { color: var(--danger); }
+
+/* Your board, and the other player's smaller beside it; a spectator gets
+   the two the same size. */
+.wordraceBoards { display: flex; justify-content: center; align-items: flex-start; gap: 18px; }
+.wordraceBlock { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.wordraceLabel { color: var(--muted); font-size: 13px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wordraceBoard {
+  --tile: min(56px, calc((100vw - 140px) / (var(--length) * 1.45)), calc((100dvh - 420px) / (var(--length) + 1)));
+  display: grid; gap: 5px;
+}
+.wordraceBoard.small { --tile: 18px; gap: 3px; }
+.wordraceBoards.pair .wordraceBoard { --tile: min(44px, calc((100vw - 120px) / (var(--length) * 2.3))); }
+.wordraceRow { display: grid; grid-template-columns: repeat(var(--length), var(--tile)); gap: inherit; }
+.wordraceTile {
+  width: var(--tile); height: var(--tile);
+  display: grid; place-items: center;
+  border: 2px solid var(--border); border-radius: 6px;
+  font: 700 calc(var(--tile) * 0.55) system-ui, sans-serif; text-transform: none;
+  color: var(--text); background: var(--surface); user-select: none;
+  transition: background 0.2s, border-color 0.2s;
+}
+.small .wordraceTile { border-width: 1px; border-radius: 3px; font-size: 11px; }
+.wordraceTile.typed { border-color: var(--muted); }
+.wordraceTile.correct, .wordraceTile.present, .wordraceTile.absent { color: #fff; border-color: transparent; }
+.wordraceTile.correct { background: var(--correct); }
+.wordraceTile.present { background: var(--present); }
+.wordraceTile.absent { background: var(--absent); }
+.wordraceRow.shake { animation: wordraceShake 0.4s; }
+@keyframes wordraceShake {
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+.wordraceBelow { display: flex; justify-content: center; }
+.wordraceKeyboard { width: 100%; max-width: 560px; display: grid; gap: 6px; user-select: none; -webkit-user-select: none; }
+.wordraceKeyRow { display: flex; gap: 5px; justify-content: center; }
+.wordraceKey {
+  flex: 1; max-width: 46px; min-width: 0; height: 52px; padding: 0;
+  font-weight: 700; font-size: 16px; touch-action: manipulation;
+}
+.wordraceKey.wide { flex: 1.6; max-width: 74px; font-size: 13px; }
+.wordraceKey.back { font-size: 20px; }
+.wordraceKey.correct, .wordraceKey.present, .wordraceKey.absent { color: #fff; border-color: transparent; }
+.wordraceKey.correct { background: var(--correct); }
+.wordraceKey.present { background: var(--present); }
+.wordraceKey.absent { background: var(--absent); opacity: 0.75; }
+
+.wordraceRecap { display: grid; justify-items: center; gap: 6px; padding: 14px 24px; text-align: center; }
+.wordraceWord { font-size: 30px; letter-spacing: 0.12em; }
+.wordraceRecap a { color: var(--link); }
+
+.wordraceInfo { padding: 12px 14px 10px; }
+.wordraceRounds { margin: 0; padding: 8px 14px 8px 36px; border-top: 1px solid var(--border); font-size: 13px; max-height: 160px; overflow-y: auto; }
+.wordraceRounds[hidden] { display: none; }
+.wordraceRounds a { color: var(--link); font-weight: 600; }
+.wordracePanel .kitActions { padding-top: 0; }
+.wordraceSide .kitChatLog { height: 160px; }
+
+.wordraceChoice { margin-bottom: 8px; }
+.wordraceTiles { margin-top: 4px; }
+
+/* The thumbnail in lists of games: the colours of both boards, the second
+   seat's above the score and the first seat's below, as the names are. */
+.wordraceThumb { display: grid; justify-items: center; gap: 4px; padding: 8px; border-radius: 4px; background: var(--surface-2); }
+.wordraceThumb strong { font-size: 16px; line-height: 1; }
+.wordraceThumbBoard { --tile: 8px; display: grid; gap: 1px; }
+.wordraceThumbBoard .wordraceTile { border-width: 1px; border-radius: 1px; }
+
+@media (max-width: 1000px) {
+  .wordrace { flex-direction: column; align-items: stretch; }
+  .wordraceMain { max-width: 620px; width: 100%; margin: 0 auto; }
+  .wordraceSide { width: auto; flex-direction: row; align-items: flex-start; }
+  .wordraceSide > * { flex: 1; min-width: 0; }
+}
+@media (max-width: 860px) {
+  .wordrace { gap: 10px; }
+  .wordraceSide { flex-direction: column; align-items: stretch; }
+  /* kit.css puts the chat away on a phone, for its own button; here it
+     simply follows the rest. */
+  .wordraceSide .kitChat { display: flex; }
+  .wordraceKey { height: 46px; font-size: 14px; }
+  .wordraceBoards { gap: 10px; }
+  .wordraceBoard.small { --tile: 13px; gap: 2px; }
+  .small .wordraceTile { font-size: 8px; }
+}
