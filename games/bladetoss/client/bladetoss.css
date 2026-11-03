@@ -1,0 +1,60 @@
+/* The sword duel: the arena, and beside it the score, the status and the
+   chat; on a narrow screen they go under it. Built on the kit's cards
+   (kit.css) and the site's colours, so the frame follows the theme; the
+   arena itself is painted in the colours of the arena being fought in. */
+
+.bladetoss { --radius: 8px; display: flex; gap: 16px; justify-content: center; align-items: flex-start; }
+/* As wide as there is room for, and no taller than the page under its bars. */
+.bladetossMain { flex: 1; min-width: 0; max-width: calc((100dvh - 170px) * 16 / 9); }
+.bladetossSide { width: 280px; flex: none; display: flex; flex-direction: column; gap: 16px; }
+
+.bladetossArena {
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #1a1236;
+  box-shadow: var(--shadow);
+}
+.bladetossCanvas { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-select: none; cursor: pointer; }
+/* While playing, a finger on the arena is the button rather than a scroll. */
+.bladetossCanvas.controls { touch-action: none; }
+.bladetossHelp { margin: 8px 2px 0; text-align: center; }
+
+.bladetossBoard { display: grid; gap: 8px; padding: 12px 14px; border-radius: 0; box-shadow: none; background: none; }
+.bladetossRow { display: flex; align-items: center; gap: 8px; }
+.bladetossSwatch { width: 14px; height: 14px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.35); }
+.bladetossRow .dot { width: 8px; height: 8px; border: 2px solid var(--muted); }
+.bladetossRow .dot.online { border-color: var(--accent); background: var(--accent); }
+.bladetossName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.bladetossWins { display: flex; gap: 3px; flex: none; }
+.bladetossWins i { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--muted); }
+.bladetossWins i.won { border-color: var(--busy); background: var(--busy); }
+
+.bladetossInfo { padding: 0 14px 10px; }
+.bladetossRounds { margin: 0; padding: 8px 14px 8px 36px; border-top: 1px solid var(--border); font-size: 13px; max-height: 140px; overflow-y: auto; }
+.bladetossRounds[hidden] { display: none; }
+.bladetossPanel .kitActions { padding-top: 0; }
+.bladetossSide .kitChatLog { height: 160px; }
+
+.bladetossTiles { margin-top: 4px; }
+
+/* The thumbnail in lists of games. */
+.bladetossThumb { display: block; width: 100%; height: auto; border-radius: 4px; }
+.bladetossThumbScore { font: 800 220px system-ui, sans-serif; stroke: #1b1233; stroke-width: 10px; paint-order: stroke; }
+
+@media (max-width: 1000px) {
+  .bladetoss { flex-direction: column; align-items: stretch; }
+  /* Still no taller than the screen, for a phone held sideways. */
+  .bladetossMain { max-width: calc((100dvh - 110px) * 16 / 9); width: 100%; margin: 0 auto; }
+  .bladetossSide { width: auto; flex-direction: row; align-items: flex-start; }
+  .bladetossSide > * { flex: 1; min-width: 0; }
+}
+@media (max-width: 860px) {
+  .bladetoss { gap: 10px; }
+  .bladetossSide { flex-direction: column; align-items: stretch; }
+  /* kit.css puts the chat away on a phone, for its own button; here it
+     simply follows the rest. */
+  .bladetossSide .kitChat { display: flex; }
+  .bladetossPanel .kitStatus { padding: 8px 14px; border-top: 1px solid var(--border); }
+  .bladetossPanel .kitActions { padding: 0 14px 10px; }
+}

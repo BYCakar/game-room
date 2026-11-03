@@ -1,6 +1,6 @@
 # Game Room
 
-A small site for playing board games in the browser with other people, or against the computer. It comes with chess and its variants, Go, Gomoku and Mill, a real-time game, Tanks, and a word game, Word Race. One Node.js server runs everything: it keeps the list of players, the invitations and every match, and the browsers only draw what it sends them.
+A small site for playing board games in the browser with other people, or against the computer. It comes with chess and its variants, Go, Gomoku and Mill, two real-time games, Tanks and Blade Toss, and a word game, Word Race. One Node.js server runs everything: it keeps the list of players, the invitations and every match, and the browsers only draw what it sends them.
 
 ## What you can do
 
@@ -13,6 +13,7 @@ A small site for playing board games in the browser with other people, or agains
 - **Play Mill:** Nine Men's Morris, or its Six and Twelve Men's cousins (the last with diagonals). Pieces fly once a player is down to three. Threefold repetition, fifty moves each without a mill, and a board filled in Twelve Men's are draws, and draws can be offered. The computer opponent is an alpha-beta search at 8 levels, run in your browser.
 - **Play Tanks:** a real-time duel in an arena of walls, the best of 1, 3 or 5 rounds. Drive with WASD or the arrows, aim with the mouse and fire with a click or Space; on a phone, touch the left half of the arena to drive and the right half to aim and fire. Shells ricochet off one wall, and three hits put a tank out. A round lasts two minutes at most, and the battle pauses while a player is away. The computer opponent, at 8 levels, finds its way round the walls, leads its shots, tries ricochets and dodges, and runs in your browser.
 - **Play Word Race:** both players hunt for the same secret word at once, in English or Turkish, of 4 to 7 letters, the best of 1, 3 or 5 rounds. Every guess is coloured: green for a letter in its place, amber for one elsewhere in the word. You see the colours of your opponent's guesses as they come, but not the letters, until the round is over; the first to find the word takes it, and a player out of guesses (one more than the letters) can only watch. Hard mode makes every hint count in later guesses. With unlimited guesses nobody runs out, and only finding the word or the clock ends a round. Type on the keyboard or the one on screen (the Turkish Q layout for Turkish). After each round the word is shown with a link to its meaning. A round lasts four minutes at most. The computer opponent, at 8 levels, thinks faster and plays better the higher it goes, from heeding only some of the hints to choosing the guess that tells it the most, and runs in your browser.
+- **Play Blade Toss:** a one-button sword duel, the best of 3, 5 or 7 rounds, in one of five arenas picked anew for each match. The fighters run on their own. Armed, the button throws the sword at the angle it is swinging through, and nobody can jump with a sword in hand; empty-handed, it jumps, kicks off a wall touched in the air, and held, clings to the wall and slides down it until let go. Swords stick in the floor, the ledges, the walls and the ceiling, and anyone can run over one to take it up, one at a time. A hit takes the round; two at once are a double knock-out and count for nobody. Press Space, W, the up arrow or click, or tap the arena on a phone; a throw goes at the angle you saw when you pressed, even over a slow connection. The computer opponent, at 8 levels, times its throws against where you will be, jumps over yours and kicks off walls, and runs in your browser.
 - **During a game:** premoves (as many as you like, shown on the board), arrows and marked squares with the right mouse button, takebacks, draw offers, a chat with quick phrases, and stepping back through the moves (Go, Gomoku and Mill have takebacks, the chat and stepping back; Go also passing, Mill also draw offers).
 - **Watching:** follow games in progress, or replay finished ones, from either side of the board.
 - **Looks:** five site themes (Light, Dark, Sepia, Midnight, and Glass, frosted over a choice of six pictures); for chess seven boards and nine piece sets, for Go, Gomoku and Mill seven boards, four kinds of stones and coordinates on or off, chosen from the ☰ menu.
@@ -67,6 +68,9 @@ games/       one folder per game, found by the server at start-up
   mill/      and again, with a board of its own drawn in the kit's look
   tanks/     a real-time game: the server steps the battle 20 times a second,
              and the browser draws it on a canvas, moving its own tank ahead
+  bladetoss/ real-time too: the duel is stepped by the same code on the server
+             and in the browser (shared/sim.js), so the browser can show its
+             own presses at once
   wordrace/  the word lists in shared/words/, built by tools/build-words.js
              from open sources (tools/SOURCES.md)
 test/        tests of the platform
