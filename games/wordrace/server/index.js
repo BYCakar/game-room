@@ -15,14 +15,15 @@ for (const lang of Object.keys(LANGUAGES)) {
 export default {
   meta,
 
-  // Options are { lang, length, rounds, hard }: words of `length` letters in
-  // `lang`, the best of `rounds`, and whether every hint must be used.
+  // Options are { lang, length, rounds, hard, unlimited }: words of `length`
+  // letters in `lang`, the best of `rounds`, whether every hint must be used,
+  // and whether there is no end to the guesses.
   validateOptions(options) {
-    const { lang, length, rounds, hard } = options;
+    const { lang, length, rounds, hard, unlimited } = options;
     if (!Object.hasOwn(LANGUAGES, lang)) return { error: 'Choose English or Turkish.' };
     if (!LENGTHS.includes(length)) return { error: `Choose words of ${LENGTHS[0]} to ${LENGTHS.at(-1)} letters.` };
     if (!ROUND_CHOICES.includes(rounds)) return { error: `Choose the best of ${ROUND_CHOICES.join(', ')} rounds.` };
-    return { options: { lang, length, rounds, hard: hard === true } };
+    return { options: { lang, length, rounds, hard: hard === true, unlimited: unlimited === true } };
   },
 
   // A bot is { level }, 1 (weakest) to 8; see shared/bot.js.

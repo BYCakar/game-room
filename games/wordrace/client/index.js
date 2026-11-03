@@ -3,7 +3,7 @@
 // guesses in full and the other's as colours only, until the round is over.
 // See games/README.md.
 
-import { LANGUAGES, LENGTHS, ROUND_CHOICES, maxGuesses } from '../shared/constants.js';
+import { LANGUAGES, LENGTHS, ROUND_CHOICES, guessLimit, maxGuesses } from '../shared/constants.js';
 import { ALPHABETS, display, normalise } from '../shared/alphabet.js';
 import { hardModeError, solved } from '../shared/feedback.js';
 import { BOT_LEVELS } from '../shared/bot.js';
@@ -24,17 +24,18 @@ const LEVELS = Array.from({ length: BOT_LEVELS }, (_, i) => i + 1);
 
 const needed = (rounds) => (rounds + 1) / 2;
 const describeRounds = (rounds) => (rounds === 1 ? 'One round' : `Best of ${rounds}`);
-const describeOptions = ({ lang, length, rounds, hard }) =>
-  `${LANGUAGES[lang]} • ${length} letters • ${describeRounds(rounds)}${hard ? ' • Hard' : ''}`;
+const describeOptions = ({ lang, length, rounds, hard, unlimited }) =>
+  `${LANGUAGES[lang]} • ${length} letters • ${describeRounds(rounds)}${hard ? ' • Hard' : ''}${unlimited ? ' • Unlimited guesses' : ''}`;
 const lookUp = (word, lang) => `https://${lang}.wiktionary.org/wiki/${encodeURIComponent(word)}`;
 
 // What was last sent from the setup is offered again.
 function rememberedSetup() {
-  const setup = { lang: 'en', length: 5, hard: false, rounds: 3, level: 3 };
+  const setup = { lang: 'en', length: 5, hard: false, unlimited: false, rounds: 3, level: 3 };
   const saved = load(SETUP_KEY) || {};
   if (Object.hasOwn(LANGUAGES, saved.lang)) setup.lang = saved.lang;
   if (LENGTHS.includes(saved.length)) setup.length = saved.length;
   if (typeof saved.hard === 'boolean') setup.hard = saved.hard;
+  if (typeof saved.unlimited === 'boolean') setup.unlimited = saved.unlimited;
   if (ROUND_CHOICES.includes(saved.rounds)) setup.rounds = saved.rounds;
   if (LEVELS.includes(saved.level)) setup.level = saved.level;
   return setup;
@@ -54,7 +55,7 @@ function wordSetup(container, submit, bot) {
     onclick: () => {
       setup.rounds = rounds;
       save(SETUP_KEY, setup);
-      const options = { lang: setup.lang, length: setup.length, rounds, hard: setup.hard };
+      const options = { lang: setup.lang, length: setup.length, rounds, hard: setup.hard, unlimited: setup.unlimited };
       if (bot) submit({ options, bot: { level: setup.level }, seat: null });
       else submit(options);
     },
@@ -63,13 +64,15 @@ function wordSetup(container, submit, bot) {
   const about = el('p', {
     className: 'kitMuted kitAbout',
     textContent: 'The same secret word for both. Green: right letter, right place; yellow: in the word elsewhere. '
-      + 'You see the colours of your opponent\'s guesses, not the letters. Hard mode: every hint must be used.',
+      + 'You see the colours of your opponent\'s guesses, not the letters. Hard mode: every hint must be used. '
+      + 'Limited: one guess more than the letters. Unlimited: guess until someone finds it or time is up.',
   });
   if (bot) container.append(el('div', { className: 'kitOpponent' }, slider(setup, 'level', 'Level', LEVELS).node));
   container.append(
     choiceRow(Object.entries(LANGUAGES), setup.lang, pick('lang'), 'wordraceChoice'),
     choiceRow(LENGTHS.map((n) => [n, `${n} letters`]), setup.length, pick('length'), 'wordraceChoice'),
     choiceRow([[false, 'Normal'], [true, 'Hard mode']], setup.hard, pick('hard'), 'wordraceChoice'),
+    choiceRow([[false, 'Limited guesses'], [true, 'Unlimited guesses']], setup.unlimited, pick('unlimited'), 'wordraceChoice'),
     about, tiles);
 }
 
@@ -173,7 +176,7 @@ function mount(container, ctx) {
     if (!game || me() === null || game.over || game.paused || pending) return false;
     if (game.phase !== 'playing' && game.phase !== 'countdown') return false;
     const rows = myRows();
-    return rows.length < maxGuesses(game.options.length) && !rows.some((r) => solved(r.pattern));
+    return rows.length < guessLimit(game.options) && !rows.some((r) => solved(r.pattern));
   }
 
   function refuse(message) {
@@ -232,6 +235,7 @@ function mount(container, ctx) {
       typing: typed ? typing : null,
       length,
       guesses: maxGuesses(length),
+      scroll: Boolean(game.options.unlimited),
       lang,
       small,
       shake: typed && shake,
@@ -249,13 +253,15 @@ function mount(container, ctx) {
       boards.replaceChildren(boardBlock(me(), { small: false, typed: canType() || pending }), boardBlock(1 - me(), { small: true }));
       boards.classList.remove('pair');
     }
+    // A board that scrolls shows its latest guesses.
+    for (const board of boards.querySelectorAll('.wordraceBoard.scroll')) board.scrollTop = board.scrollHeight;
     keyboard?.colour(me() === null ? [] : myRows());
     keyboard?.disable(!canType());
   }
 
   // The names, the rounds won and how far each is in this one.
   function drawPlayers() {
-    const max = maxGuesses(game.options.length);
+    const max = guessLimit(game.options);
     const target = needed(game.options.rounds);
     // Your own card first.
     const seats = me() === 1 ? [1, 0] : [0, 1];
@@ -263,7 +269,7 @@ function mount(container, ctx) {
       const name = game.players[seat];
       const rows = game.boards[seat];
       const found = rows.some((r) => solved(r.pattern));
-      const progress = found ? '✓' : rows.length >= max ? '✗' : `${rows.length}/${max}`;
+      const progress = found ? '✓' : rows.length >= max ? '✗' : max === Infinity ? `${rows.length}` : `${rows.length}/${max}`;
       return el('div', { className: 'wordracePlayer kitCard' },
         el('span', { className: `dot ${game.connected[seat] ? 'online' : 'offline'}`, hidden: game.over || Boolean(game.bots?.[seat]) }),
         el('span', { className: 'wordraceName', textContent: name + (seat === me() ? ' (you)' : '') }),
@@ -321,7 +327,7 @@ function mount(container, ctx) {
     else if (game.phase === 'playing') {
       const rows = myRows();
       status.replaceChildren(rows.some((r) => solved(r.pattern)) ? 'Found it!'
-        : rows.length >= maxGuesses(game.options.length) ? `Out of guesses: can ${game.players[1 - me()]} find it?` : 'Find the word!');
+        : rows.length >= guessLimit(game.options) ? `Out of guesses: can ${game.players[1 - me()]} find it?` : 'Find the word!');
     } else status.replaceChildren(game.phase === 'countdown' ? 'Get ready…' : 'Round over');
     status.classList.toggle('over', Boolean(game.over));
 
@@ -429,12 +435,16 @@ function mount(container, ctx) {
 
 // The score and the colours of this round's guesses, for lists of games:
 // the second seat's board above, the first seat's below, as the names are.
+// With no end to the guesses, only the latest fit.
 function preview(container, { score, length, boards }) {
-  const grid = (rows) => el('div', { className: 'wordraceThumbBoard', style: `--length:${length}` },
+  const grid = (all) => {
+    const rows = all.slice(-maxGuesses(length));
+    return el('div', { className: 'wordraceThumbBoard', style: `--length:${length}` },
     ...Array.from({ length: maxGuesses(length) }, (_, r) => el('div', { className: 'wordraceRow' },
       ...Array.from({ length }, (_, i) => el('span', {
         className: `wordraceTile ${rows[r] ? TILE_CLASS[rows[r][i]] : ''}`,
       })))));
+  };
   container.replaceChildren(el('div', { className: 'wordraceThumb' },
     grid(boards[1]), el('strong', { textContent: `${score[1]} – ${score[0]}` }), grid(boards[0])));
 }

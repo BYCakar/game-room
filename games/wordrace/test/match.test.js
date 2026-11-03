@@ -59,7 +59,9 @@ test('the word lists', async () => {
 
 test('invitation options and bots', () => {
   assert.deepEqual(wordrace.validateOptions({ lang: 'tr', length: 6, rounds: 3, hard: true, junk: 1 }),
-    { options: { lang: 'tr', length: 6, rounds: 3, hard: true } });
+    { options: { lang: 'tr', length: 6, rounds: 3, hard: true, unlimited: false } });
+  assert.equal(wordrace.validateOptions({ lang: 'en', length: 5, rounds: 1, unlimited: true }).options.unlimited, true);
+  assert.equal(wordrace.validateOptions({ lang: 'en', length: 5, rounds: 1, unlimited: 1 }).options.unlimited, false);
   assert.deepEqual(wordrace.validateOptions({ lang: 'en', length: 5, rounds: 1, hard: 'yes' }).options.hard, false);
   for (const bad of [{}, { lang: 'de', length: 5, rounds: 1 }, { lang: 'en', length: 8, rounds: 1 },
     { lang: 'en', length: '5', rounds: 1 }, { lang: 'en', length: 5, rounds: 2 }, { lang: 'toString', length: 5, rounds: 1 }]) {
@@ -71,10 +73,10 @@ test('invitation options and bots', () => {
 
 // A match whose clock is stepped by the test rather than by a timer, with
 // its first word chosen by the test.
-function newMatch({ word = 'crane', rounds = 3, hard = false, lang = 'en', bots } = {}) {
+function newMatch({ word = 'crane', rounds = 3, hard = false, unlimited = false, lang = 'en', bots } = {}) {
   const changes = [];
   const match = wordrace.createMatch({
-    players: ['ann', 'ben'], options: { lang, length: [...word].length, rounds, hard }, bots, onChange: (m) => changes.push(m.snapshot(0)),
+    players: ['ann', 'ben'], options: { lang, length: [...word].length, rounds, hard, unlimited }, bots, onChange: (m) => changes.push(m.snapshot(0)),
   });
   clearInterval(match.timer);
   match.word = word;
@@ -129,6 +131,25 @@ test('out of guesses, a draw, and the round limit', () => {
   assert.equal(match.phase, 'playing');
   match.advance(1);
   assert.equal(match.rounds[1].reason, 'time');
+});
+
+test('unlimited guesses: only finding the word or the clock ends a round', () => {
+  const { match } = newMatch({ unlimited: true });
+  go(match);
+  const wrong = ['slate', 'pious', 'dumpy', 'hello', 'world', 'magic', 'fjord', 'blimp'];
+  for (const word of [...wrong, ...wrong]) {
+    assert.equal(match.handle(0, { action: 'guess', word }), null);
+    assert.equal(match.handle(1, { action: 'guess', word }), null);
+  }
+  assert.equal(match.phase, 'playing');
+  assert.equal(match.boards[0].length, 16);
+  assert.equal(match.handle(1, { action: 'guess', word: 'crane' }), null);
+  assert.deepEqual(match.rounds[0], { ...match.rounds[0], winner: 1, reason: 'solved' });
+
+  const slow = newMatch({ unlimited: true }).match;
+  go(slow);
+  slow.advance(ROUND_LIMIT_MS);
+  assert.equal(slow.rounds[0].reason, 'time');
 });
 
 test('best of 3, and the cap of twice as many rounds', () => {

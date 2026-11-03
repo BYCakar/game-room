@@ -5,7 +5,7 @@
 // the server counts it as ready for the next.
 
 import { createBrain } from '../shared/bot.js';
-import { maxGuesses } from '../shared/constants.js';
+import { guessLimit } from '../shared/constants.js';
 import { loadWords } from '../shared/words.js';
 
 // How often the bot looks whether it is time to guess.
@@ -35,7 +35,7 @@ export function createBot(ctx) {
     if (seat === null || !brain?.guess || game.phase !== 'playing') return;
     const rows = game.boards[seat];
     const { length } = game.options;
-    if (rows.length >= maxGuesses(length)) return;
+    if (rows.length >= guessLimit(game.options)) return;
     const now = performance.now();
     const round = game.moves.length;
     if (!due || due.round !== round || due.row !== rows.length) {

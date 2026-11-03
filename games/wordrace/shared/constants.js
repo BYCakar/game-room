@@ -3,6 +3,9 @@
 // How long the words are, and how many guesses each player has for one.
 export const LENGTHS = [4, 5, 6, 7];
 export const maxGuesses = (length) => length + 1;
+// How many guesses a player has in a match with these options: as above, or
+// no end of them with `unlimited`, when only the clock ends a round.
+export const guessLimit = ({ length, unlimited }) => (unlimited ? Infinity : maxGuesses(length));
 
 // A match is the best of this many rounds, each with a new word.
 export const ROUND_CHOICES = [1, 3, 5];

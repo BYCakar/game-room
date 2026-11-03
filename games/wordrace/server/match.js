@@ -4,7 +4,7 @@
 // until the round is over.
 
 import { randomInt, randomUUID } from 'node:crypto';
-import { COUNTDOWN_MS, RECAP_MS, ROUND_LIMIT_MS, maxGuesses } from '../shared/constants.js';
+import { COUNTDOWN_MS, RECAP_MS, ROUND_LIMIT_MS, guessLimit } from '../shared/constants.js';
 import { display, inAlphabet, normalise } from '../shared/alphabet.js';
 import { hardModeError, score, solved } from '../shared/feedback.js';
 
@@ -103,7 +103,8 @@ export class WordRaceMatch {
     if (this.phase !== 'playing') return 'The round has not started';
     const board = this.boards[seat];
     const { lang, length, hard } = this.options;
-    if (board.length >= maxGuesses(length)) return 'You have no guesses left';
+    const limit = guessLimit(this.options);
+    if (board.length >= limit) return 'You have no guesses left';
     if (typeof text !== 'string') return 'Type a word';
     const word = normalise(text, lang);
     if ([...word].length !== length) return `Guess a word of ${length} letters`;
@@ -115,7 +116,7 @@ export class WordRaceMatch {
     const pattern = score(word, this.word);
     board.push({ guess: word, pattern });
     if (solved(pattern)) this.endRound(seat, 'solved');
-    else if (this.boards.every((b) => b.length >= maxGuesses(length))) this.endRound(null, 'out');
+    else if (this.boards.every((b) => b.length >= limit)) this.endRound(null, 'out');
     if (!this.over) this.onChange(this);
     return null;
   }

@@ -42,6 +42,14 @@
 }
 .wordraceBoard.small { --tile: 18px; gap: 3px; }
 .wordraceBoards.pair .wordraceBoard { --tile: min(44px, calc((100vw - 120px) / (var(--length) * 2.3))); }
+/* With no end to the guesses: as tall as the usual number of rows, and
+   scrolled by wheel or finger, without a bar to take room from the tiles. */
+.wordraceBoard.scroll {
+  max-height: calc((var(--tile) + 5px) * var(--rows) - 5px);
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+}
+.wordraceBoard.small.scroll { max-height: calc((var(--tile) + 3px) * var(--rows) - 3px); }
+.wordraceBoard.scroll::-webkit-scrollbar { display: none; }
 .wordraceRow { display: grid; grid-template-columns: repeat(var(--length), var(--tile)); gap: inherit; }
 .wordraceTile {
   width: var(--tile); height: var(--tile);
@@ -113,5 +121,6 @@
   .wordraceKey { height: 46px; font-size: 14px; }
   .wordraceBoards { gap: 10px; }
   .wordraceBoard.small { --tile: 13px; gap: 2px; }
+  .wordraceBoard.small.scroll { max-height: calc((var(--tile) + 2px) * var(--rows) - 2px); }
   .small .wordraceTile { font-size: 8px; }
 }

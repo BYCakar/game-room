@@ -12,10 +12,12 @@ const HINT = { correct: 'in its place', present: 'in the word, elsewhere', absen
 
 // Draws a board into `node`: `rows` are { guess?, pattern }, followed by
 // `typing` (the row being written) and empty rows up to `guesses`.
-// `small` draws it smaller, as the other player's.
-export function drawBoard(node, { rows, typing = null, length, guesses, lang, small = false, shake = false }) {
-  node.className = `wordraceBoard${small ? ' small' : ''}`;
+// `small` draws it smaller, as the other player's. With `scroll` (no end to
+// the guesses) it is no taller than `guesses` rows and scrolls beyond them.
+export function drawBoard(node, { rows, typing = null, length, guesses, lang, small = false, shake = false, scroll = false }) {
+  node.className = `wordraceBoard${small ? ' small' : ''}${scroll ? ' scroll' : ''}`;
   node.style.setProperty('--length', length);
+  node.style.setProperty('--rows', guesses);
   const line = (letters, pattern, extra = '') => el('div', { className: `wordraceRow ${extra}`.trim() },
     ...Array.from({ length }, (_, i) => {
       const ch = letters?.[i];
@@ -27,7 +29,7 @@ export function drawBoard(node, { rows, typing = null, length, guesses, lang, sm
       });
     }));
   const drawn = rows.map((r) => line(r.guess && [...r.guess], r.pattern));
-  if (typing !== null && drawn.length < guesses) drawn.push(line([...typing], null, `typing${shake ? ' shake' : ''}`));
+  if (typing !== null) drawn.push(line([...typing], null, `typing${shake ? ' shake' : ''}`));
   while (drawn.length < guesses) drawn.push(line(null, null));
   node.replaceChildren(...drawn);
 }
