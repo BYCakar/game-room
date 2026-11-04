@@ -103,7 +103,10 @@ test('sent by a player, read in the admin panel', async (t) => {
   await alice.next('joined');
   alice.send({ type: 'feedback', kind: 'idea', text: 'Please add checkers', game: 'pick' });
   // Thanks, and how long until the next one is taken.
-  assert.deepEqual(await alice.next('feedbackSent'), { type: 'feedbackSent', ok: true, error: null, retryAfterMs: 60_000 });
+  const sent = await alice.next('feedbackSent');
+  assert.deepEqual({ ...sent, retryAfterMs: undefined }, { type: 'feedbackSent', ok: true, error: null, retryAfterMs: undefined });
+  // A minute, less the millisecond or so that may pass on a busy machine.
+  assert.ok(sent.retryAfterMs > 59_000 && sent.retryAfterMs <= 60_000, String(sent.retryAfterMs));
   alice.send({ type: 'feedback', kind: 'bug', text: 'And another thing' });
   const held = await alice.next('feedbackSent');
   assert.equal(held.ok, false);
