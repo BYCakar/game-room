@@ -210,6 +210,8 @@ test('bots play whole matches on every arena', () => {
         if (press) match.handle(seat, { action: 'press', ph: press.ph });
       }
       match.advance(50);
+      // As the browser does, each press is let go of a moment later.
+      for (const seat of [0, 1]) if (match.held[seat]) match.handle(seat, { action: 'release' });
       ms += 50;
     }
     assert.ok(match.over, `${MAPS[map].name}: no result after ${ms / 1000}s`);
