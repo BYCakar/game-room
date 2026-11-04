@@ -26,6 +26,11 @@ const KEYS = new Set(['Space', 'KeyW', 'ArrowUp']);
 const FONT = '800 {px}px system-ui, -apple-system, "Segoe UI", sans-serif';
 const font = (px) => FONT.replace('{px}', px);
 const rnd = (a, b) => a + Math.random() * (b - a);
+// Whether a key went to something being typed in (the chat) or to a dialog
+// of the page, rather than to the duel.
+const NOT_TEXT = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'range']);
+const typing = (t) => t instanceof Element && Boolean(t.closest('textarea, select, dialog, [contenteditable]') ||
+  (t.matches('input') && !NOT_TEXT.has(t.type)));
 
 // `send(action)` sends an action of the player's own seat. `banner(game,
 // msSinceSnapshot)` gives the words written across the arena, if any:
@@ -85,8 +90,11 @@ export function createArena(root, { send, banner, feedback }) {
 
   function onKey(e) {
     if (!KEYS.has(e.code) || e.ctrlKey || e.metaKey || e.altKey || !playing()) return;
-    if (e.target instanceof Element && e.target.closest('input, textarea, select, dialog, button')) return;
+    if (typing(e.target)) return;
     e.preventDefault();
+    // A button or checkbox clicked a moment ago (Resign, the chat's switch)
+    // would take Space as a click of its own.
+    if (e.target instanceof HTMLElement && e.target !== document.body) e.target.blur();
     if (e.type === 'keydown') {
       if (!e.repeat) pressDown(e.code, performance.now());
     } else letGo(e.code, performance.now());
