@@ -185,6 +185,20 @@ test('rounds nobody takes, the round limit, resigning, a player away', () => {
   assert.deepEqual(away.over, { reason: 'abandoned', winner: 0, score: [0, 0] });
 });
 
+test('some rounds are fought with the ledges moving', () => {
+  const rolls = [0.25, 0.75];
+  let i = 0;
+  const { match } = newMatch(7, 0);
+  // newMatch fixes rand at 0.25: below MOVING_CHANCE, so this round moves.
+  assert.equal(match.world.moving, true);
+  assert.equal(match.snapshot(0).world.moving, true);
+  match.rand = () => rolls[i++ % 2];
+  match.startRound();
+  assert.equal(match.world.moving, true);
+  match.startRound();
+  assert.equal(match.world.moving, false);
+});
+
 test('a new arena for each match', () => {
   const seen = new Set();
   let last = null;

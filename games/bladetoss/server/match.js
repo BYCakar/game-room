@@ -5,10 +5,10 @@
 
 import { randomUUID } from 'node:crypto';
 import {
-  AIM_SPEED, COUNTDOWN_MS, DRAW_WINDOW, MAX_LAG, ROUND_LIMIT_MS, ROUND_OVER_MS, SEND_RATE, STEP,
+  AIM_SPEED, COUNTDOWN_MS, DRAW_WINDOW, MAX_LAG, MOVING_CHANCE, ROUND_LIMIT_MS, ROUND_OVER_MS, SEND_RATE, STEP,
 } from '../shared/constants.js';
 import { MAPS } from '../shared/maps.js';
-import { createWorld, pack, press, step } from '../shared/sim.js';
+import { createWorld, hasMovingLedges, pack, press, step } from '../shared/sim.js';
 
 const TICK_MS = 1000 / SEND_RATE;
 const STEP_MS = STEP * 1000;
@@ -64,8 +64,10 @@ export class BladeTossMatch {
     this.timer.unref();
   }
 
+  // Some rounds, in arenas that have them, are fought with the ledges moving.
   startRound() {
-    this.world = createWorld(this.map, { rand: this.rand, eventId: this.world?.eventId ?? 0 });
+    const moving = hasMovingLedges(this.map) && this.rand() < MOVING_CHANCE;
+    this.world = createWorld(this.map, { rand: this.rand, eventId: this.world?.eventId ?? 0, moving });
     this.phaseMsLeft = COUNTDOWN_MS;
     this.roundMsLeft = ROUND_LIMIT_MS;
     this.result = null;

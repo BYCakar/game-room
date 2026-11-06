@@ -49,8 +49,9 @@ function setupForm(container, submit, bot) {
   el('span', { textContent: `First to ${needed(rounds)}` }))));
   const about = el('p', {
     className: 'kitMuted kitAbout',
-    textContent: 'One button. Armed, it throws your swinging sword; empty-handed, it jumps, kicks off walls, ' +
-      'and held, clings to them. Run over any sword to take it up. The arena changes every match.',
+    textContent: 'One button. Armed, it throws your swinging sword, which drops as it flies and glances off walls; ' +
+      'empty-handed, it jumps (twice), kicks off walls, and held, clings to them. Run over any sword to take it up. ' +
+      'The arena changes every match, and in some rounds its ledges move.',
   });
   if (bot) container.append(el('div', { className: 'kitOpponent' }, slider(setup, 'level', 'Level', LEVELS).node));
   container.append(about, tiles);
@@ -96,8 +97,8 @@ function mount(container, ctx) {
   const help = el('p', {
     className: 'kitMuted bladetossHelp',
     textContent: matchMedia('(pointer: coarse)').matches
-      ? 'Tap the arena: throw when armed, jump when not. Hold against a wall to cling, let go to leap.'
-      : 'Space, W, ↑ or click: throw when armed, jump when not • hold against a wall to cling, let go to leap',
+      ? 'Tap the arena: throw when armed, jump (twice) when not. Hold against a wall to cling, let go to leap.'
+      : 'Space, W, ↑ or click: throw when armed, jump when not, again in the air • hold against a wall to cling, let go to leap',
   });
   const board = el('div', { className: 'kitCard bladetossBoard' });
   const status = el('div', { className: 'kitStatus' });
@@ -167,7 +168,8 @@ function mount(container, ctx) {
     if (g.phase === 'countdown') {
       const round = g.moves.length + 1;
       const last = g.score.every((s) => s === needed(g.options.rounds) - 1);
-      return { big: `Round ${round}`, small: round === 1 ? MAPS[g.map].name : last ? 'Final round' : describeOptions(g.options), colour: '#ffd23f' };
+      const what = round === 1 ? MAPS[g.map].name : last ? 'Final round' : describeOptions(g.options);
+      return { big: `Round ${round}`, small: g.world.moving ? `${what} • Moving ledges!` : what, colour: '#ffd23f' };
     }
     return null;
   }
@@ -184,6 +186,7 @@ function mount(container, ctx) {
       heard = e.id;
       if (e.type === 'throw' && e.seat !== next.you) ctx.play('move');
       else if (e.type === 'clash') ctx.play('capture');
+      else if (e.type === 'bounce') ctx.play('move');
       else if (e.type === 'hit') ctx.play('explosion');
     }
     if (next.phase === 'playing' && prev.phase !== 'playing') ctx.play('check');

@@ -22,15 +22,23 @@ export const BODY_H = 44;
 export const CLING_SPEED = 65; // how fast a fighter holding on to a wall slides down it
 export const WALL_GRACE = 0.16; // how long after touching a wall a press still kicks off it
 export const JUMP_BUFFER = 0.14; // a press just before landing jumps on landing
+export const AIR_JUMPS = 1; // jumps an empty-handed fighter has in the air, back on landing or kicking off a wall
+export const AIR_JUMP_SPEED = 690;
 
 // The swords.
-export const SWORD_SPEED = 960;
-export const SWORD_GRAVITY = 300;
+// Thrown swords drop: a level throw dips well before the far wall, so a long
+// throw has to be aimed high.
+export const SWORD_SPEED = 1100;
+export const SWORD_GRAVITY = 900;
 export const SWORD_LEN = 50;
 export const SELF_SAFE = 0.2; // a thrown sword cannot hit its thrower this soon
 export const NO_PICK = 0.45; // nor be picked up again by them this soon
 export const WALL_HOLD = 1.0; // a sword in a side wall falls out after this long
 export const CEIL_HOLD = 0.8; // and one in the ceiling after this long
+// A sword hitting a side wall glances off it, mirror-wise, keeping this much
+// of its speed, this many times; the next time it sticks.
+export const WALL_BOUNCES = 2;
+export const BOUNCE_KEEP = 0.8;
 
 // The held sword swings between these angles above (positive) and below the
 // horizontal, a full swing up and down every AIM_PERIOD seconds.
@@ -56,6 +64,8 @@ export const DRAW_WINDOW = 0.12;
 export const COUNTDOWN_MS = 1500;
 export const ROUND_OVER_MS = 2600;
 export const ROUND_LIMIT_MS = 60_000;
+// How often a round is fought with the arena's ledges moving.
+export const MOVING_CHANCE = 0.5;
 
 // What a match can be: the best of this many rounds.
 export const ROUND_CHOICES = [3, 5, 7];

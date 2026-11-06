@@ -1,13 +1,14 @@
 // The computer opponent. It sees what a player sees, the world, and does
 // what a player does: presses the button. Armed, it tries the throw it would
 // make a moment from now against where its opponent will be, and throws when
-// that would hit (not always: lower levels let more chances go, and miss
-// more). Empty-handed, it jumps over swords coming at it, hops up to swords
-// lying on ledges, and from level 3 on kicks off walls.
+// that would hit, straight or off a wall (not always: lower levels let more
+// chances go, and miss more). Empty-handed, it jumps over swords coming at it,
+// using its second jump if it must, hops up to swords lying on ledges, and
+// from level 3 on kicks off walls.
 
 import {
-  AIM_AMP, AIM_MID, AIM_SPEED, BODY_H, BODY_W, CEIL, FLOOR, SWORD_GRAVITY, SWORD_LEN, SWORD_SPEED, WALK_SPEED,
-  WALL_GRACE,
+  AIM_AMP, AIM_MID, AIM_SPEED, BODY_H, BODY_W, BOUNCE_KEEP, CEIL, FLOOR, SWORD_GRAVITY, SWORD_LEN, SWORD_SPEED,
+  WALK_SPEED, WALL_BOUNCES, WALL_GRACE,
 } from './constants.js';
 import { geometry, inBody } from './sim.js';
 
@@ -52,6 +53,7 @@ export function throwWouldHit(world, seat, lead) {
   let y = p.y - 22 + (dy * SWORD_LEN) / 2;
   let vx = dx * SWORD_SPEED;
   let vy = dy * SWORD_SPEED;
+  let bounces = 0;
   const st = 1 / 90;
   for (let t = 0; t < 1.3; t += st) {
     const prevTipY = y + (Math.sin(Math.atan2(vy, vx)) * SWORD_LEN) / 2;
@@ -63,6 +65,15 @@ export function throwWouldHit(world, seat, lead) {
     const ty = y + (Math.sin(ang) * SWORD_LEN) / 2;
     const ox = walkedX(geo, o.x, o.facing, lead + t);
     if (Math.abs(tx - ox) < BODY_W / 2 - 3 && ty > o.y - BODY_H + 4 && ty < o.y - 3) return true;
+    if ((tx < geo.wl || tx > geo.wr) && bounces < WALL_BOUNCES) {
+      // Off the wall, as the sword would go (see sim.js).
+      const side = tx < geo.wl ? -1 : 1;
+      bounces++;
+      vx = -vx * BOUNCE_KEEP;
+      vy *= BOUNCE_KEEP;
+      x = (side < 0 ? geo.wl : geo.wr) - side * ((Math.abs(Math.cos(Math.atan2(vy, vx))) * SWORD_LEN) / 2 + 1);
+      continue;
+    }
     if (tx < geo.wl || tx > geo.wr || ty > FLOOR || ty < CEIL) return false;
     for (const pl of geo.plats) if (vy > 0 && prevTipY <= pl.y && ty >= pl.y && tx >= pl.x1 && tx <= pl.x2) return false;
   }
@@ -73,7 +84,7 @@ export function throwWouldHit(world, seat, lead) {
 // half a second; -1 if not.
 export function timeToHit(world, s, p) {
   const geo = geometry(world);
-  let { x, y, vx, vy } = s;
+  let { x, y, vx, vy, bounces } = s;
   const st = 1 / 120;
   for (let t = 0; t < 0.5; t += st) {
     vy += SWORD_GRAVITY * st;
@@ -84,6 +95,12 @@ export function timeToHit(world, s, p) {
     const ty = y + (Math.sin(ang) * SWORD_LEN) / 2;
     const px = walkedX(geo, p.x, p.facing, t);
     if (inBody(tx, ty, px, p.y, 6) || inBody(x, y, px, p.y, 6)) return t;
+    if ((tx < geo.wl || tx > geo.wr) && bounces < WALL_BOUNCES) {
+      bounces++;
+      vx = -vx * BOUNCE_KEEP;
+      vy *= BOUNCE_KEEP;
+      continue;
+    }
     if (ty > FLOOR || tx < geo.wl || tx > geo.wr || ty < CEIL) return -1;
   }
   return -1;
@@ -131,7 +148,7 @@ export function createBrain(level, rand = Math.random) {
         const t = timeToHit(world, s, p);
         if (t >= 0 && t < 0.3) {
           dodged = s.throwId;
-          if (p.onGround && rand() < DODGE[k]) return {};
+          if ((p.onGround || p.airJumps > 0) && rand() < DODGE[k]) return {};
         }
       }
       if (p.onGround) {
@@ -141,7 +158,7 @@ export function createBrain(level, rand = Math.random) {
             Math.abs(s.x - (p.x + p.facing * 45)) < 30 && rand() < dt * 8) return {};
         }
         if (rand() < dt * 0.35) return {};
-      }
+      } else if (p.airJumps > 0 && p.vy > -120 && rand() < dt * 1.2) return {}; // now and then, a second jump at the top
       return null;
     },
   };

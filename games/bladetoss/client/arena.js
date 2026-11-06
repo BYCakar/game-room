@@ -6,14 +6,14 @@
 // over to it rather than jumping.
 //
 // The button: Space, W, the up arrow, a mouse button or a finger on the
-// arena. Pressed, it throws or jumps; held, it clings to walls; let go, it
-// leaps off them.
+// arena. Pressed, it throws or jumps (twice, the second in the air); held, it
+// clings to walls; let go, it leaps off them.
 
 import {
   ARENA_H, ARENA_W, BODY_H, CEIL, FLOOR, SEAT_COLOURS, STEP, SWORD_GRAVITY, SWORD_LEN, SWORD_SPEED,
 } from '../shared/constants.js';
 import { MAPS } from '../shared/maps.js';
-import { aimAngle, handOf, hiltOf, press, step, unpack } from '../shared/sim.js';
+import { aimAngle, geometry, handOf, hiltOf, press, step, unpack } from '../shared/sim.js';
 import { el } from '/js/kit/dom.js';
 
 // The world is not stepped on further than this past the last snapshot.
@@ -71,7 +71,7 @@ export function createArena(root, { send, banner, feedback }) {
     send({ action: 'press', seq, ...(ph === undefined ? {} : { ph }) });
     if (game.phase === 'playing' && !game.paused && me.alive) {
       if (me.sword >= 0) feedback('throw');
-      else if (me.onGround || me.cling || me.wallT > 0) {
+      else if (me.onGround || me.cling || me.wallT > 0 || me.airJumps > 0) {
         squash[game.you] = -0.6;
         feedback('jump');
       }
@@ -206,6 +206,14 @@ export function createArena(root, { send, banner, feedback }) {
         if (!own) squash[e.seat] = -0.5;
         burst(e.x - e.side * 14, e.y, 8, ['#d9cdf5', '#fff'], 180, { dir: e.side < 0 ? 0 : Math.PI, spread: 0.9, g: 300, lmin: 0.2, lmax: 0.45 });
         break;
+      case 'airJump':
+        if (!own) squash[e.seat] = -0.5;
+        ring(e.x, e.y);
+        break;
+      case 'bounce':
+        burst(e.x, e.y, 14, ['#fff', '#ffe68a', '#ffd23f'], 320, { dir: e.side < 0 ? 0 : Math.PI, spread: 1.1, g: 300, lmin: 0.15, lmax: 0.35, smin: 1.5, smax: 3 });
+        shake = Math.max(shake, 4);
+        break;
       case 'land': squash[e.seat] = 0.7; dust(e.x, e.y, 5); break;
       case 'stick':
         shake = Math.max(shake, 3);
@@ -238,6 +246,15 @@ export function createArena(root, { send, banner, feedback }) {
         x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0, max: rnd(o.lmin || 0.35, o.lmax || 0.8),
         size: rnd(o.smin || 2, o.smax || 5), colour: colours[(Math.random() * colours.length) | 0],
         g: o.g ?? 900, type: o.type || 'dot', rot: Math.random() * 6, vr: rnd(-12, 12),
+      });
+    }
+  }
+  // A puff of air under a second jump.
+  function ring(x, y) {
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      parts.push({
+        x, y, vx: Math.cos(a) * 130, vy: Math.sin(a) * 40, life: 0, max: 0.35, size: 3, colour: '#ffffff', g: 0, type: 'dot', rot: 0, vr: 0,
       });
     }
   }
@@ -314,6 +331,7 @@ export function createArena(root, { send, banner, feedback }) {
     g.setTransform(scale, 0, 0, scale, sx * scale, sy * scale);
 
     const map = MAPS[view.map];
+    const geo = geometry(view);
     if (map.stars) {
       for (const st of STARS) {
         g.globalAlpha = 0.35 + 0.35 * Math.sin(now / 500 + st.p);
@@ -324,6 +342,7 @@ export function createArena(root, { send, banner, feedback }) {
       }
       g.globalAlpha = 1;
     }
+    for (const p of geo.plats) drawLedge(g, p, map);
 
     const swordAt = (s, i) => ({ ...s, x: s.x + offsets.swords[i].x, y: s.y + offsets.swords[i].y });
     const fighterAt = (p, i) => ({ ...p, x: p.x + offsets.fighters[i].x, y: p.y + offsets.fighters[i].y });
@@ -459,13 +478,14 @@ export function createArena(root, { send, banner, feedback }) {
     let vx = dx * SWORD_SPEED;
     let vy = dy * SWORD_SPEED;
     g.fillStyle = SEAT_COLOURS[p.seat].light;
-    const st = 0.022;
-    for (let i = 1; i <= 9; i++) {
+    // Long enough to show the blade starting to drop.
+    const st = 0.024;
+    for (let i = 1; i <= 13; i++) {
       vy += SWORD_GRAVITY * st;
       x += vx * st;
       y += vy * st;
       if (y > FLOOR || x < m.wl || x > m.wr || y < CEIL) break;
-      g.globalAlpha = 0.55 * (1 - i / 10);
+      g.globalAlpha = 0.55 * (1 - i / 14);
       g.beginPath();
       g.arc(x, y, 2.6, 0, Math.PI * 2);
       g.fill();
@@ -474,9 +494,8 @@ export function createArena(root, { send, banner, feedback }) {
   }
 
   function shadowOf(p) {
-    const m = MAPS[view.map];
     let best = null;
-    for (const [x1, x2, y] of [[-1e4, 1e4, FLOOR], ...m.plats]) {
+    for (const { x1, x2, y } of geometry(view).surfaces) {
       if (y >= p.y - 1 && p.x >= x1 && p.x <= x2 && (!best || y < best)) best = y;
     }
     if (best === null) return;
@@ -644,7 +663,7 @@ export function createArena(root, { send, banner, feedback }) {
     if (!playing() || game.phase === 'roundOver') return;
     const me = view.fighters[game.you];
     if (!me.alive) return;
-    const what = me.sword >= 0 ? 'THROW' : me.cling ? 'LET GO TO LEAP' : 'JUMP · HOLD TO CLING';
+    const what = me.sword >= 0 ? 'THROW' : me.cling ? 'LET GO TO LEAP' : me.onGround || me.airJumps > 0 || me.wallT > 0 ? 'JUMP · HOLD TO CLING' : 'HOLD TO CLING';
     const label = `${matchMedia('(pointer: coarse)').matches ? 'TAP' : 'SPACE'}  ·  ${what}`;
     g.font = font(15);
     const w = g.measureText(label).width + 28;
@@ -859,27 +878,38 @@ function drawBackdrop(M, width, height, scale) {
   }
   b.fillStyle = 'rgba(255,255,255,.1)';
   b.fillRect(0, CEIL - 3, ARENA_W, 3);
-  for (const [x1, x2, y] of M.plats) {
-    b.fillStyle = 'rgba(10,5,25,.25)';
-    roundRect(b, x1 + 4, y + 6, x2 - x1, 18, 7);
-    b.fill();
-    const plat = b.createLinearGradient(0, y, 0, y + 18);
-    plat.addColorStop(0, M.plat[0]);
-    plat.addColorStop(1, M.plat[1]);
-    b.fillStyle = plat;
-    roundRect(b, x1, y, x2 - x1, 18, 7);
-    b.fill();
-    b.fillStyle = M.plat[2];
-    roundRect(b, x1, y, x2 - x1, 5, 3);
-    b.fill();
-    b.strokeStyle = 'rgba(20,12,40,.35)';
-    b.lineWidth = 2;
-    for (let x = x1 + 38; x < x2 - 10; x += 38) {
+  return c;
+}
+
+// A ledge, drawn each frame since it may be moving. A moving one has a
+// row of studs along its top, so it can be told apart before it moves.
+function drawLedge(b, { x1, x2, y, motion }, M) {
+  b.fillStyle = 'rgba(10,5,25,.25)';
+  roundRect(b, x1 + 4, y + 6, x2 - x1, 18, 7);
+  b.fill();
+  const plat = b.createLinearGradient(0, y, 0, y + 18);
+  plat.addColorStop(0, M.plat[0]);
+  plat.addColorStop(1, M.plat[1]);
+  b.fillStyle = plat;
+  roundRect(b, x1, y, x2 - x1, 18, 7);
+  b.fill();
+  b.fillStyle = M.plat[2];
+  roundRect(b, x1, y, x2 - x1, 5, 3);
+  b.fill();
+  b.strokeStyle = 'rgba(20,12,40,.35)';
+  b.lineWidth = 2;
+  for (let x = x1 + 38; x < x2 - 10; x += 38) {
+    b.beginPath();
+    b.moveTo(x, y + 6);
+    b.lineTo(x, y + 17);
+    b.stroke();
+  }
+  if (motion) {
+    b.fillStyle = 'rgba(20,12,40,.45)';
+    for (let x = x1 + 14; x < x2 - 8; x += 22) {
       b.beginPath();
-      b.moveTo(x, y + 6);
-      b.lineTo(x, y + 17);
-      b.stroke();
+      b.arc(x, y + 12, 2, 0, Math.PI * 2);
+      b.fill();
     }
   }
-  return c;
 }
