@@ -6,7 +6,7 @@ import { DEFAULT_ROUNDS, ROUND_CHOICES, SEAT_COLOURS } from '../shared/constants
 import { MAPS } from '../shared/maps.js';
 import { BOT_LEVELS } from '../shared/bot.js';
 import { el, load, save, loadStylesheet } from '/js/kit/dom.js';
-import { slider } from '/js/kit/setup.js';
+import { choiceRow, slider } from '/js/kit/setup.js';
 import { createArena } from './arena.js';
 import { createBot } from './bot.js';
 
@@ -20,19 +20,21 @@ const CHAT_MAX_LENGTH = 140;
 const LEVELS = Array.from({ length: BOT_LEVELS }, (_, i) => i + 1);
 
 const needed = (rounds) => (rounds + 1) / 2;
-const describeOptions = ({ rounds }) => `Best of ${rounds}`;
+const describeOptions = ({ rounds, powerUps }) => `Best of ${rounds}${powerUps === false ? ' • No power-ups' : ''}`;
 
 // What was last sent from the setup is offered again.
 function rememberedSetup() {
-  const setup = { rounds: DEFAULT_ROUNDS, level: 3 };
+  const setup = { rounds: DEFAULT_ROUNDS, powerUps: true, level: 3 };
   const saved = load(SETUP_KEY) || {};
   if (ROUND_CHOICES.includes(saved.rounds)) setup.rounds = saved.rounds;
+  if (typeof saved.powerUps === 'boolean') setup.powerUps = saved.powerUps;
   if (LEVELS.includes(saved.level)) setup.level = saved.level;
   return setup;
 }
 
-// One tile per length of match, the usual one first; clicking one sends it
-// off. Against the computer its level comes first.
+// Power-ups on or off, then one tile per length of match, the usual one
+// first; clicking one sends it off. Against the computer its level comes
+// first.
 function setupForm(container, submit, bot) {
   const setup = rememberedSetup();
   const order = [DEFAULT_ROUNDS, ...ROUND_CHOICES.filter((r) => r !== DEFAULT_ROUNDS)];
@@ -42,8 +44,9 @@ function setupForm(container, submit, bot) {
     onclick: () => {
       setup.rounds = rounds;
       save(SETUP_KEY, setup);
-      if (bot) submit({ options: { rounds }, bot: { level: setup.level }, seat: null });
-      else submit({ rounds });
+      const options = { rounds, powerUps: setup.powerUps };
+      if (bot) submit({ options, bot: { level: setup.level }, seat: null });
+      else submit(options);
     },
   }, el('strong', { textContent: describeOptions({ rounds }) }),
   el('span', { textContent: `First to ${needed(rounds)}` }))));
@@ -51,10 +54,13 @@ function setupForm(container, submit, bot) {
     className: 'kitMuted kitAbout',
     textContent: 'One button. Armed, it throws your swinging sword, which drops as it flies and glances off walls; ' +
       'empty-handed, it jumps (twice), kicks off walls, and held, clings to them. Run over any sword to take it up. ' +
-      'The arena changes every match, and in some rounds its ledges move.',
+      'The arena changes every match, and in some rounds its ledges move. Power-ups: run or jump into them.',
   });
   if (bot) container.append(el('div', { className: 'kitOpponent' }, slider(setup, 'level', 'Level', LEVELS).node));
-  container.append(about, tiles);
+  const powerUps = choiceRow([[true, 'Power-ups'], [false, 'No power-ups']], setup.powerUps, (on) => {
+    setup.powerUps = on;
+  }, 'bladetossChoice');
+  container.append(powerUps, about, tiles);
 }
 
 const inviteForm = (container, submit) => setupForm(container, submit, false);
@@ -186,7 +192,9 @@ function mount(container, ctx) {
       heard = e.id;
       if (e.type === 'throw' && e.seat !== next.you) ctx.play('move');
       else if (e.type === 'clash') ctx.play('capture');
-      else if (e.type === 'bounce') ctx.play('move');
+      else if (e.type === 'bounce' || e.type === 'spring') ctx.play('move');
+      else if (e.type === 'power') ctx.play('start');
+      else if (e.type === 'shield') ctx.play('capture');
       else if (e.type === 'hit') ctx.play('explosion');
     }
     if (next.phase === 'playing' && prev.phase !== 'playing') ctx.play('check');

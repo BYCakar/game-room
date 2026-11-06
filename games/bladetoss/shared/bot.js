@@ -7,10 +7,10 @@
 // from level 3 on kicks off walls.
 
 import {
-  AIM_AMP, AIM_MID, AIM_SPEED, BODY_H, BODY_W, BOUNCE_KEEP, CEIL, FLOOR, SWORD_GRAVITY, SWORD_LEN, SWORD_SPEED,
-  WALK_SPEED, WALL_BOUNCES, WALL_GRACE,
+  AIM_AMP, AIM_MID, AIM_SPEED, BODY_H, BODY_W, BOUNCE_KEEP, CEIL, FLOOR, GIANT_SCALE, GIANT_SPEED, SWORD_GRAVITY,
+  SWORD_LEN, SWORD_SPEED, WALK_SPEED, WALL_BOUNCES, WALL_GRACE,
 } from './constants.js';
-import { geometry, inBody } from './sim.js';
+import { aimRate, geometry, inBody } from './sim.js';
 
 export const BOT_LEVELS = 8;
 
@@ -39,30 +39,35 @@ export function walkedX(geo, x, facing, t) {
 }
 
 // Whether the sword `seat` holds, thrown `lead` seconds from now, would hit
-// the other fighter (who is assumed to keep walking as it is).
+// the other fighter (who is assumed to keep walking as it is). It counts the
+// thrower's steady hand, and a laser or giant throw to come.
 export function throwWouldHit(world, seat, lead) {
   const geo = geometry(world);
   const p = world.fighters[seat];
   const o = world.fighters[1 - seat];
   if (p.sword < 0 || !o.alive) return false;
-  const a = AIM_MID + AIM_AMP * Math.sin(p.aimPh + AIM_SPEED * lead);
+  const giant = p.power === 'giant';
+  const gravity = p.power === 'laser' ? 0 : SWORD_GRAVITY;
+  const len = SWORD_LEN * (giant ? GIANT_SCALE : 1);
+  const speed = SWORD_SPEED * (giant ? GIANT_SPEED : 1);
+  const a = AIM_MID + AIM_AMP * Math.sin(p.aimPh + AIM_SPEED * aimRate(p) * lead);
   const px = walkedX(geo, p.x, p.facing, lead);
   const dx = p.facing * Math.cos(a);
   const dy = -Math.sin(a);
-  let x = px + p.facing * 13 + (dx * SWORD_LEN) / 2;
-  let y = p.y - 22 + (dy * SWORD_LEN) / 2;
-  let vx = dx * SWORD_SPEED;
-  let vy = dy * SWORD_SPEED;
+  let x = px + p.facing * 13 + (dx * len) / 2;
+  let y = p.y - 22 + (dy * len) / 2;
+  let vx = dx * speed;
+  let vy = dy * speed;
   let bounces = 0;
   const st = 1 / 90;
   for (let t = 0; t < 1.3; t += st) {
-    const prevTipY = y + (Math.sin(Math.atan2(vy, vx)) * SWORD_LEN) / 2;
-    vy += SWORD_GRAVITY * st;
+    const prevTipY = y + (Math.sin(Math.atan2(vy, vx)) * len) / 2;
+    vy += gravity * st;
     x += vx * st;
     y += vy * st;
     const ang = Math.atan2(vy, vx);
-    const tx = x + (Math.cos(ang) * SWORD_LEN) / 2;
-    const ty = y + (Math.sin(ang) * SWORD_LEN) / 2;
+    const tx = x + (Math.cos(ang) * len) / 2;
+    const ty = y + (Math.sin(ang) * len) / 2;
     const ox = walkedX(geo, o.x, o.facing, lead + t);
     if (Math.abs(tx - ox) < BODY_W / 2 - 3 && ty > o.y - BODY_H + 4 && ty < o.y - 3) return true;
     if ((tx < geo.wl || tx > geo.wr) && bounces < WALL_BOUNCES) {
@@ -71,7 +76,7 @@ export function throwWouldHit(world, seat, lead) {
       bounces++;
       vx = -vx * BOUNCE_KEEP;
       vy *= BOUNCE_KEEP;
-      x = (side < 0 ? geo.wl : geo.wr) - side * ((Math.abs(Math.cos(Math.atan2(vy, vx))) * SWORD_LEN) / 2 + 1);
+      x = (side < 0 ? geo.wl : geo.wr) - side * ((Math.abs(Math.cos(Math.atan2(vy, vx))) * len) / 2 + 1);
       continue;
     }
     if (tx < geo.wl || tx > geo.wr || ty > FLOOR || ty < CEIL) return false;
@@ -85,9 +90,10 @@ export function throwWouldHit(world, seat, lead) {
 export function timeToHit(world, s, p) {
   const geo = geometry(world);
   let { x, y, vx, vy, bounces } = s;
+  const gravity = s.laser || s.returning ? 0 : SWORD_GRAVITY;
   const st = 1 / 120;
   for (let t = 0; t < 0.5; t += st) {
-    vy += SWORD_GRAVITY * st;
+    vy += gravity * st;
     x += vx * st;
     y += vy * st;
     const ang = Math.atan2(vy, vx);
@@ -139,6 +145,12 @@ export function createBrain(level, rand = Math.random) {
       likedBefore = false;
       waitLeft = -1;
       if (p.onGround) triedWall = 0;
+      // A power-up a jump away, just ahead.
+      for (const item of world.items ?? []) {
+        const ahead = (item.x - p.x) * p.facing;
+        const above = p.y - BODY_H - item.y;
+        if (ahead > 10 && ahead < 70 && above > 0 && above < 190 && (p.onGround || p.airJumps > 0) && rand() < dt * 10) return {};
+      }
       if (!p.onGround && p.wallT > 0 && p.wallT < WALL_GRACE - 0.03 && triedWall !== p.wallSide) {
         triedWall = p.wallSide;
         if (rand() < WALL_JUMPS[k]) return {};

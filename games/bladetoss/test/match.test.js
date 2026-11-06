@@ -11,8 +11,9 @@ import { startServer } from '../../../server/index.js';
 import { connect } from '../../../test/helpers.js';
 
 test('invitation options and bots', () => {
-  assert.deepEqual(bladetoss.validateOptions({ rounds: 7, junk: 1 }), { options: { rounds: 7 } });
-  for (const bad of [{}, { rounds: 2 }, { rounds: '7' }, { rounds: 9 }, null]) {
+  assert.deepEqual(bladetoss.validateOptions({ rounds: 7, junk: 1 }), { options: { rounds: 7, powerUps: true } });
+  assert.deepEqual(bladetoss.validateOptions({ rounds: 3, powerUps: false }), { options: { rounds: 3, powerUps: false } });
+  for (const bad of [{}, { rounds: 2 }, { rounds: '7' }, { rounds: 9 }, null, { rounds: 7, powerUps: 'yes' }]) {
     assert.ok(bladetoss.validateOptions(bad).error, JSON.stringify(bad));
   }
   assert.deepEqual(bladetoss.validateBot({ level: 8 }), { bot: { level: 8 }, name: 'Computer level 8' });
@@ -186,15 +187,11 @@ test('rounds nobody takes, the round limit, resigning, a player away', () => {
 });
 
 test('some rounds are fought with the ledges moving', () => {
-  const rolls = [0.25, 0.75];
-  let i = 0;
   const { match } = newMatch(7, 0);
   // newMatch fixes rand at 0.25: below MOVING_CHANCE, so this round moves.
   assert.equal(match.world.moving, true);
   assert.equal(match.snapshot(0).world.moving, true);
-  match.rand = () => rolls[i++ % 2];
-  match.startRound();
-  assert.equal(match.world.moving, true);
+  match.rand = () => 0.75;
   match.startRound();
   assert.equal(match.world.moving, false);
 });

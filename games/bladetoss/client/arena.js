@@ -10,10 +10,17 @@
 // clings to walls; let go, it leaps off them.
 
 import {
-  ARENA_H, ARENA_W, BODY_H, CEIL, FLOOR, SEAT_COLOURS, STEP, SWORD_GRAVITY, SWORD_LEN, SWORD_SPEED,
+  ARENA_H, ARENA_W, BODY_H, CEIL, FLOOR, GIANT_SPEED, ITEM_LIFE, ITEM_RADIUS, POWER_NAMES, SEAT_COLOURS, SPRING_HALF_W,
+  SPRING_LIFE, STEADY_TIME, STEP, SWORD_GRAVITY, SWORD_LEN, SWORD_SPEED, TRIPLE_SPREAD,
 } from '../shared/constants.js';
 import { MAPS } from '../shared/maps.js';
-import { aimAngle, geometry, handOf, hiltOf, press, step, unpack } from '../shared/sim.js';
+import { aimAngle, geometry, handOf, hiltOf, lenOf, press, step, unpack } from '../shared/sim.js';
+
+// The colour of each power-up, on its orb, its label and the badge of who has it.
+export const POWER_COLOURS = {
+  shield: '#4fd1ff', triple: '#ff9f43', steady: '#8ee35a', laser: '#ff4d6d',
+  magnet: '#b48cff', boomerang: '#ffd23f', giant: '#ff7ad9', spring: '#34d3a6',
+};
 import { el } from '/js/kit/dom.js';
 
 // The world is not stepped on further than this past the last snapshot.
@@ -46,7 +53,11 @@ export function createArena(root, { send, banner, feedback }) {
   let view = null; // the world as drawn this frame
   let lastEvent = 0;
   let playingSince = null;
-  const offsets = { fighters: [{ x: 0, y: 0 }, { x: 0, y: 0 }], swords: [{ x: 0, y: 0 }, { x: 0, y: 0 }] };
+  // How far each fighter and sword is drawn from where the world has it,
+  // while a correction eases out. Swords come and go (the extra blades of a
+  // triple throw), so theirs are made as needed.
+  const offsets = { fighters: [{ x: 0, y: 0 }, { x: 0, y: 0 }], swords: [] };
+  const swordOffset = (i) => (offsets.swords[i] ??= { x: 0, y: 0 });
   const squash = [0, 0];
   let parts = [];
   let shake = 0;
@@ -185,7 +196,8 @@ export function createArena(root, { send, banner, feedback }) {
       });
       after.swords.forEach((s, i) => {
         const was = before.swords[i];
-        const o = offsets.swords[i];
+        const o = swordOffset(i);
+        if (!was) { Object.assign(o, { x: 0, y: 0 }); return; }
         const dx = was.x + o.x - s.x;
         const dy = was.y + o.y - s.y;
         if (was.state === s.state && was.holder === s.holder && s.state !== 'held' && Math.hypot(dx, dy) < SNAP_DISTANCE) {
@@ -220,6 +232,29 @@ export function createArena(root, { send, banner, feedback }) {
         if (e.side === 0) dust(e.x, e.y, 7);
         else burst(e.x, e.y, 8, ['#cfc4ee', '#fff'], 160, { dir: e.side === 2 ? Math.PI / 2 : e.side < 0 ? 0 : Math.PI, spread: 1, g: 400 });
         break;
+      case 'spawn':
+        burst(e.x, e.y, 14, [POWER_COLOURS[e.kind], '#fff'], 160, { type: 'star', g: 0, lmin: 0.3, lmax: 0.6, smin: 2, smax: 4 });
+        break;
+      case 'power':
+        burst(e.x, e.y, 18, [POWER_COLOURS[e.kind], '#fff'], 260, { type: 'star', g: 0, lmin: 0.3, lmax: 0.6, smin: 2, smax: 5 });
+        label(POWER_NAMES[e.kind], e.x, e.y - 24, POWER_COLOURS[e.kind]);
+        break;
+      case 'shield':
+        burst(e.x, e.y, 26, [POWER_COLOURS.shield, '#fff', '#bdf0ff'], 360, { g: 200, lmin: 0.25, lmax: 0.55, smin: 2, smax: 4 });
+        label('Blocked!', e.x, e.y - 40, POWER_COLOURS.shield);
+        shake = Math.max(shake, 8);
+        break;
+      case 'spring':
+        squash[e.seat] = -0.8;
+        springHit.set(e.x, performance.now());
+        burst(e.x, e.y - 6, 12, [POWER_COLOURS.spring, '#fff'], 220, { dir: -Math.PI / 2, spread: 0.8, g: 400, lmin: 0.25, lmax: 0.5 });
+        break;
+      case 'magnet':
+        burst(e.x, e.y, 12, [POWER_COLOURS.magnet, '#fff'], 180, { type: 'star', g: 0, lmin: 0.3, lmax: 0.5, smin: 2, smax: 4 });
+        break;
+      case 'catch':
+        burst(e.x, e.y, 10, [POWER_COLOURS.boomerang, '#fff'], 160, { type: 'star', g: 0, lmin: 0.25, lmax: 0.45, smin: 2, smax: 4 });
+        break;
       case 'pick':
         burst(e.x, e.y, 12, ['#fff', '#ffe68a', '#ffd23f'], 220, { type: 'star', g: 0, lmin: 0.3, lmax: 0.55, smin: 2, smax: 4 });
         break;
@@ -249,6 +284,12 @@ export function createArena(root, { send, banner, feedback }) {
       });
     }
   }
+  // Words that rise and fade: the name of a power-up just taken.
+  function label(words, x, y, colour) {
+    parts.push({ x, y, vx: 0, vy: -45, life: 0, max: 1.3, size: 0, colour, g: 0, type: 'text', words, rot: 0, vr: 0 });
+  }
+  const springHit = new Map(); // pad x -> when it last launched someone, for its bounce
+
   // A puff of air under a second jump.
   function ring(x, y) {
     for (let i = 0; i < 12; i++) {
@@ -344,28 +385,48 @@ export function createArena(root, { send, banner, feedback }) {
     }
     for (const p of geo.plats) drawLedge(g, p, map);
 
-    const swordAt = (s, i) => ({ ...s, x: s.x + offsets.swords[i].x, y: s.y + offsets.swords[i].y });
+    const swordAt = (s, i) => ({ ...s, x: s.x + swordOffset(i).x, y: s.y + swordOffset(i).y });
     const fighterAt = (p, i) => ({ ...p, x: p.x + offsets.fighters[i].x, y: p.y + offsets.fighters[i].y });
     const fighters = view.fighters.map(fighterAt);
     const swords = view.swords.map(swordAt);
-    // A held sword is drawn in the hand it is in, wherever that is drawn.
-    swords.forEach((s, i) => {
+    // A held sword is drawn in the hand it is in, wherever that is drawn,
+    // already showing the power its throw will have.
+    swords.forEach((s) => {
       if (s.state !== 'held') return;
       const p = fighters[s.holder];
+      s.giant = p.power === 'giant';
+      s.laser = p.power === 'laser';
+      s.boomerang = p.power === 'boomerang';
       const a = aimAngle(p);
       const h = handOf(p);
       const dx = p.facing * Math.cos(a);
       const dy = -Math.sin(a);
-      Object.assign(s, { x: h.x + (dx * SWORD_LEN) / 2, y: h.y + (dy * SWORD_LEN) / 2, ang: Math.atan2(dy, dx) });
+      const half = lenOf(s) / 2;
+      Object.assign(s, { x: h.x + dx * half, y: h.y + dy * half, ang: Math.atan2(dy, dx) });
     });
 
+    drawSprings(now);
     swords.forEach((s) => { if (s.state === 'stuck' || s.state === 'falling') drawSword(s, now); });
     if (view.phase !== 'roundOver' && !game.over) fighters.forEach((p) => { if (p.alive && p.sword >= 0) drawAim(p); });
     fighters.forEach((p) => { if (!p.alive) drawFighter(p, now); });
     fighters.forEach((p) => { if (p.alive) drawFighter(p, now); });
+    // A triple throw to come shows as two ghost blades beside the real one.
+    swords.forEach((s) => {
+      if (s.state !== 'held' || fighters[s.holder].power !== 'triple') return;
+      const p = fighters[s.holder];
+      const h = handOf(p);
+      for (const spread of [-TRIPLE_SPREAD, TRIPLE_SPREAD]) {
+        const a = aimAngle(p) + spread;
+        const dx = p.facing * Math.cos(a);
+        const dy = -Math.sin(a);
+        drawSword({ ...s, x: h.x + (dx * SWORD_LEN) / 2, y: h.y + (dy * SWORD_LEN) / 2, ang: Math.atan2(dy, dx), temp: true }, now);
+      }
+    });
     swords.forEach((s) => { if (s.state === 'held') drawSword(s, now); });
     fighters.forEach((p) => drawHand(p));
-    swords.forEach((s) => { if (s.state === 'flying') { drawStreak(s); drawSword(s, now); } });
+    swords.forEach((s) => { if (s.state === 'flying' || s.state === 'homing') { drawStreak(s); drawSword(s, now); } });
+    for (const item of view.items) drawItem(item, now);
+    fighters.forEach((p) => { if (p.alive && p.shield) drawShield(p, now); });
     drawParts();
     // Names of fighters side by side are put one above the other.
     const close = Math.abs(fighters[0].x - fighters[1].x) < 110 && Math.abs(fighters[0].y - fighters[1].y) < 30;
@@ -404,11 +465,21 @@ export function createArena(root, { send, banner, feedback }) {
     g.fillText(str, x, y);
   }
 
+  // A sword, hilt to tip along its angle: twice the size if giant, see-through
+  // if one of the extra blades of a triple throw, glowing if a laser throw,
+  // gold-edged if a boomerang.
   function drawSword(s, now) {
     const h = hiltOf(s);
     g.save();
     g.translate(h.x, h.y);
     g.rotate(s.ang);
+    const k = lenOf(s) / SWORD_LEN;
+    g.scale(k, k);
+    if (s.temp) g.globalAlpha = 0.55;
+    if (s.laser) {
+      g.shadowColor = POWER_COLOURS.laser;
+      g.shadowBlur = 14;
+    }
     g.fillStyle = '#ffd23f';
     g.beginPath();
     g.arc(-3, 0, 4, 0, Math.PI * 2);
@@ -431,10 +502,11 @@ export function createArena(root, { send, banner, feedback }) {
     g.lineTo(SWORD_LEN - 9, 4);
     g.lineTo(15, 4);
     g.closePath();
-    g.fillStyle = '#e8eef8';
+    g.fillStyle = s.laser ? '#ffe3e8' : '#e8eef8';
     g.fill();
+    g.shadowBlur = 0;
     g.lineWidth = 1.5;
-    g.strokeStyle = '#2a2150';
+    g.strokeStyle = s.boomerang ? POWER_COLOURS.boomerang : '#2a2150';
     g.stroke();
     g.fillStyle = '#b7c3d9';
     g.fillRect(15, 0.5, SWORD_LEN - 24, 3);
@@ -452,13 +524,14 @@ export function createArena(root, { send, banner, feedback }) {
   }
 
   function drawStreak(s) {
-    const len = Math.hypot(s.vx, s.vy) * 0.05;
+    const len = Math.hypot(s.vx, s.vy) * (s.laser ? 0.12 : 0.05);
     const d = { x: Math.cos(s.ang), y: Math.sin(s.ang) };
     const grad = g.createLinearGradient(s.x, s.y, s.x - d.x * len, s.y - d.y * len);
-    grad.addColorStop(0, 'rgba(255,255,255,.5)');
-    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    const colour = s.laser ? '255,77,109' : s.state === 'homing' ? '180,140,255' : '255,255,255';
+    grad.addColorStop(0, `rgba(${colour},.6)`);
+    grad.addColorStop(1, `rgba(${colour},0)`);
     g.strokeStyle = grad;
-    g.lineWidth = 6;
+    g.lineWidth = s.giant ? 10 : 6;
     g.lineCap = 'round';
     g.beginPath();
     g.moveTo(s.x, s.y);
@@ -473,24 +546,154 @@ export function createArena(root, { send, banner, feedback }) {
     const dx = p.facing * Math.cos(a);
     const dy = -Math.sin(a);
     const m = MAPS[view.map];
-    let x = h.x + dx * SWORD_LEN;
-    let y = h.y + dy * SWORD_LEN;
-    let vx = dx * SWORD_SPEED;
-    let vy = dy * SWORD_SPEED;
-    g.fillStyle = SEAT_COLOURS[p.seat].light;
-    // Long enough to show the blade starting to drop.
+    const giant = p.power === 'giant';
+    const laser = p.power === 'laser';
+    const speed = SWORD_SPEED * (giant ? GIANT_SPEED : 1);
+    let x = h.x + dx * SWORD_LEN * (giant ? 2 : 1);
+    let y = h.y + dy * SWORD_LEN * (giant ? 2 : 1);
+    let vx = dx * speed;
+    let vy = dy * speed;
+    g.fillStyle = laser ? POWER_COLOURS.laser : SEAT_COLOURS[p.seat].light;
+    // Long enough to show the blade starting to drop; a laser's goes further.
     const st = 0.024;
-    for (let i = 1; i <= 13; i++) {
-      vy += SWORD_GRAVITY * st;
+    for (let i = 1; i <= (laser ? 20 : 13); i++) {
+      if (!laser) vy += SWORD_GRAVITY * st;
       x += vx * st;
       y += vy * st;
       if (y > FLOOR || x < m.wl || x > m.wr || y < CEIL) break;
-      g.globalAlpha = 0.55 * (1 - i / 14);
+      g.globalAlpha = 0.55 * (1 - i / (laser ? 21 : 14));
       g.beginPath();
       g.arc(x, y, 2.6, 0, Math.PI * 2);
       g.fill();
     }
     g.globalAlpha = 1;
+  }
+
+  // A power-up: an orb in its colour with its sign, bobbing, blinking as it fades.
+  function drawItem(item, now) {
+    const left = ITEM_LIFE - item.t;
+    if (left < 3 && Math.floor(now / 120) % 2) return;
+    const y = item.y + Math.sin(now / 300 + item.id) * 4;
+    const colour = POWER_COLOURS[item.kind];
+    const glow = g.createRadialGradient(item.x, y, 4, item.x, y, ITEM_RADIUS * 2.2);
+    glow.addColorStop(0, `${colour}aa`);
+    glow.addColorStop(1, `${colour}00`);
+    g.fillStyle = glow;
+    g.beginPath();
+    g.arc(item.x, y, ITEM_RADIUS * 2.2, 0, Math.PI * 2);
+    g.fill();
+    badge(item.kind, item.x, y, ITEM_RADIUS);
+  }
+
+  // A round badge with the sign of a power-up on it.
+  function badge(kind, x, y, r) {
+    g.save();
+    g.translate(x, y);
+    g.fillStyle = '#1b1233';
+    g.beginPath();
+    g.arc(0, 0, r + 2, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = POWER_COLOURS[kind];
+    g.beginPath();
+    g.arc(0, 0, r, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = 'rgba(255,255,255,.35)';
+    g.beginPath();
+    g.arc(-r * 0.3, -r * 0.35, r * 0.35, 0, Math.PI * 2);
+    g.fill();
+    g.scale(r / 16, r / 16);
+    sign(kind);
+    g.restore();
+  }
+
+  // The sign of each power-up, drawn in white for a badge of radius 16.
+  function sign(kind) {
+    g.strokeStyle = '#fff';
+    g.fillStyle = '#fff';
+    g.lineWidth = 2.6;
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    g.beginPath();
+    switch (kind) {
+      case 'shield':
+        g.moveTo(0, -9); g.lineTo(8, -6); g.lineTo(7, 2); g.quadraticCurveTo(5, 7, 0, 10);
+        g.quadraticCurveTo(-5, 7, -7, 2); g.lineTo(-8, -6); g.closePath();
+        g.stroke();
+        break;
+      case 'triple':
+        for (const a of [-0.45, 0, 0.45]) { g.moveTo(0, 9); g.lineTo(Math.sin(a) * 18, 9 - Math.cos(a) * 18); }
+        g.stroke();
+        break;
+      case 'steady':
+        g.arc(0, 0, 8.5, 0, Math.PI * 2);
+        g.moveTo(0, 0); g.lineTo(0, -5.5); g.moveTo(0, 0); g.lineTo(4, 2);
+        g.stroke();
+        break;
+      case 'laser':
+        g.moveTo(-10, 0); g.lineTo(8, 0); g.moveTo(3, -5); g.lineTo(9, 0); g.lineTo(3, 5);
+        g.stroke();
+        break;
+      case 'magnet':
+        g.arc(0, 1, 7, 0, Math.PI);
+        g.moveTo(-7, 1); g.lineTo(-7, -8); g.moveTo(7, 1); g.lineTo(7, -8);
+        g.stroke();
+        break;
+      case 'boomerang':
+        g.moveTo(-9, 6); g.quadraticCurveTo(-2, -12, 9, -4);
+        g.moveTo(-9, 6); g.quadraticCurveTo(1, -2, 9, -4);
+        g.stroke();
+        break;
+      case 'giant':
+        g.font = font(12);
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText('XL', 0, 1);
+        break;
+      case 'spring':
+        g.moveTo(-8, 8); g.lineTo(8, 8);
+        g.moveTo(-6, 5); g.lineTo(6, 2); g.lineTo(-6, -1); g.lineTo(6, -4); g.lineTo(-6, -7);
+        g.moveTo(-8, -9); g.lineTo(8, -9);
+        g.stroke();
+        break;
+      default:
+    }
+  }
+
+  // Spring pads on the floor: they squash when they launch someone, and
+  // blink as they wear out.
+  function drawSprings(now) {
+    for (const sp of view.springs) {
+      if (SPRING_LIFE - sp.t < 2.5 && Math.floor(now / 120) % 2) continue;
+      const since = (now - (springHit.get(sp.x) ?? -1e9)) / 1000;
+      const coil = since < 0.3 ? 4 + Math.sin(since * 40) * 3 : 10;
+      const w = SPRING_HALF_W * 2;
+      g.fillStyle = '#1b1233';
+      g.fillRect(sp.x - w / 2, FLOOR - 4, w, 4);
+      g.strokeStyle = POWER_COLOURS.spring;
+      g.lineWidth = 3;
+      g.beginPath();
+      for (let i = 0; i <= 4; i++) g.lineTo(sp.x + (i % 2 ? 9 : -9), FLOOR - 4 - (coil * i) / 4);
+      g.stroke();
+      g.fillStyle = POWER_COLOURS.spring;
+      rrect(sp.x - w / 2, FLOOR - 9 - coil, w, 6, 3);
+      g.fill();
+    }
+  }
+
+  // The bubble of a shield, shimmering.
+  function drawShield(p, now) {
+    const cy = p.y - BODY_H / 2;
+    const r = 32 + Math.sin(now / 160) * 1.5;
+    const glow = g.createRadialGradient(p.x, cy, r * 0.6, p.x, cy, r);
+    glow.addColorStop(0, 'rgba(79,209,255,0)');
+    glow.addColorStop(1, 'rgba(79,209,255,.35)');
+    g.fillStyle = glow;
+    g.beginPath();
+    g.arc(p.x, cy, r, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = 'rgba(190,240,255,.8)';
+    g.lineWidth = 2;
+    g.stroke();
   }
 
   function shadowOf(p) {
@@ -605,10 +808,27 @@ export function createArena(root, { send, banner, feedback }) {
   }
 
   // Each fighter's player above its head, the player's own in yellow.
+  // With badges for the powers it holds after the name; a steady hand's
+  // badge empties as its time runs out.
   function drawName(p, lift) {
     if (!p.alive) return;
     const name = game.players[p.seat] + (p.seat === game.you ? ' (you)' : '');
-    text(name, p.x, p.y - BODY_H - 14 - lift, 12, p.seat === game.you ? '#ffe066' : '#fff', 'center', 3);
+    const y = p.y - BODY_H - 14 - lift;
+    text(name, p.x, y, 12, p.seat === game.you ? '#ffe066' : '#fff', 'center', 3);
+    const kinds = [p.power, p.steadyT > 0 ? 'steady' : ''].filter(Boolean);
+    g.font = font(12);
+    let x = p.x + g.measureText(name).width / 2 + 12;
+    for (const kind of kinds) {
+      badge(kind, x, y, 8);
+      if (kind === 'steady') {
+        g.strokeStyle = '#1b1233';
+        g.lineWidth = 2.5;
+        g.beginPath();
+        g.arc(x, y, 10, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - p.steadyT / STEADY_TIME));
+        g.stroke();
+      }
+      x += 20;
+    }
   }
 
   function drawParts() {
@@ -616,7 +836,10 @@ export function createArena(root, { send, banner, feedback }) {
       const k = 1 - q.life / q.max;
       g.globalAlpha = Math.min(1, k * 1.6);
       g.fillStyle = q.colour;
-      if (q.type === 'star') {
+      if (q.type === 'text') {
+        g.globalAlpha = Math.min(1, k * 2.5);
+        text(q.words, q.x, q.y, 16, q.colour, 'center', 4);
+      } else if (q.type === 'star') {
         g.save();
         g.translate(q.x, q.y);
         g.rotate(q.rot);
@@ -663,7 +886,9 @@ export function createArena(root, { send, banner, feedback }) {
     if (!playing() || game.phase === 'roundOver') return;
     const me = view.fighters[game.you];
     if (!me.alive) return;
-    const what = me.sword >= 0 ? 'THROW' : me.cling ? 'LET GO TO LEAP' : me.onGround || me.airJumps > 0 || me.wallT > 0 ? 'JUMP · HOLD TO CLING' : 'HOLD TO CLING';
+    const jumpWords = me.cling ? 'LET GO TO LEAP' : me.onGround || me.airJumps > 0 || me.wallT > 0 ? 'JUMP · HOLD TO CLING' : 'HOLD TO CLING';
+    const ready = me.power ? ` · ${POWER_NAMES[me.power].toUpperCase()}${me.power === 'magnet' ? ' READY' : ''}` : '';
+    const what = (me.sword >= 0 ? 'THROW' : jumpWords) + ready;
     const label = `${matchMedia('(pointer: coarse)').matches ? 'TAP' : 'SPACE'}  ·  ${what}`;
     g.font = font(15);
     const w = g.measureText(label).width + 28;

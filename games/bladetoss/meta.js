@@ -2,7 +2,7 @@
 export default {
   id: 'bladetoss',
   name: 'Blade Toss',
-  description: 'A one-button sword duel. The fighters run on their own; time the swinging blade and throw it, bank it off a wall, or double-jump, wall-jump and cling once your hands are empty.',
+  description: 'A one-button sword duel. The fighters run on their own; time the swinging blade and throw it, bank it off a wall, or double-jump, wall-jump and cling once your hands are empty. Grab power-ups as they float in.',
   players: 2,
   icon: '⚔',
 };

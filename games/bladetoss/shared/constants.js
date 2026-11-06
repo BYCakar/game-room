@@ -76,3 +76,33 @@ export const SEAT_COLOURS = [
   { main: '#ff5a6e', dark: '#b92740', light: '#ffc2ca', name: 'Red' },
   { main: '#46b3ff', dark: '#1d69bb', light: '#c3e7ff', name: 'Blue' },
 ];
+
+// Power-ups. Now and then one floats into the arena; a fighter that runs or
+// jumps into it gets it. Each lasts as long as the round at most.
+export const POWER_UPS = ['shield', 'triple', 'steady', 'laser', 'magnet', 'boomerang', 'giant', 'spring'];
+export const POWER_NAMES = {
+  shield: 'Shield', // a bubble that turns one sword away
+  triple: 'Triple blade', // the next throw is three swords, fanned out
+  steady: 'Steady hand', // the held sword swings at half speed for a while
+  laser: 'Laser throw', // the next throw flies dead straight
+  magnet: 'Magnet', // the nearest sword lying about flies into the empty hand
+  boomerang: 'Boomerang', // the next throw comes back if it misses
+  giant: 'Giant blade', // the next throw is twice as long, and slower
+  spring: 'Spring pad', // a pad on the floor that launches whoever runs over it
+};
+export const ITEM_RADIUS = 16;
+export const ITEM_LIFE = 12; // seconds a power-up floats before it fades
+export const ITEM_FIRST_MS = [5000, 8000]; // into a round, the first one comes between these
+export const ITEM_EVERY_MS = [9000, 14000]; // and the next ones this long after the last
+export const TRIPLE_SPREAD = (10 * Math.PI) / 180; // the extra swords' angle either side
+export const STEADY_TIME = 8;
+export const STEADY_RATE = 0.5;
+export const GIANT_SCALE = 2;
+export const GIANT_SPEED = 0.75;
+export const BOOMERANG_TURN = 0.35; // after this long in the air, it heads home
+export const BOOMERANG_PULL = 7; // how quickly it brakes and turns for home (per second)
+export const BOOMERANG_MAX = 2.2; // and gives up after this long, falling like any sword
+export const MAGNET_SPEED = 900;
+export const SPRING_LIFE = 12;
+export const SPRING_SPEED = 1150;
+export const SPRING_HALF_W = 22;

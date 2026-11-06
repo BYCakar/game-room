@@ -8,11 +8,13 @@ import { BladeTossMatch } from './match.js';
 export default {
   meta,
 
-  // Options are { rounds }: the match is the best of that many.
+  // Options are { rounds, powerUps }: the match is the best of that many
+  // rounds, with power-ups appearing unless `powerUps` is false.
   validateOptions(options) {
-    const { rounds } = options ?? {};
+    const { rounds, powerUps = true } = options ?? {};
     if (!ROUND_CHOICES.includes(rounds)) return { error: `Choose the best of ${ROUND_CHOICES.join(', ')} rounds.` };
-    return { options: { rounds } };
+    if (typeof powerUps !== 'boolean') return { error: 'Power-ups are either on or off.' };
+    return { options: { rounds, powerUps } };
   },
 
   // A bot is { level }, 1 (weakest) to 8; see shared/bot.js.

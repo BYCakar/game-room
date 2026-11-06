@@ -37,6 +37,7 @@
 .bladetossSide .kitChatLog { height: 160px; }
 
 .bladetossTiles { margin-top: 4px; }
+.bladetossChoice { margin-bottom: 8px; }
 
 /* The thumbnail in lists of games. */
 .bladetossThumb { display: block; width: 100%; height: auto; border-radius: 4px; }

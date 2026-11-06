@@ -5,10 +5,11 @@
 
 import { randomUUID } from 'node:crypto';
 import {
-  AIM_SPEED, COUNTDOWN_MS, DRAW_WINDOW, MAX_LAG, MOVING_CHANCE, ROUND_LIMIT_MS, ROUND_OVER_MS, SEND_RATE, STEP,
+  AIM_SPEED, CEIL, COUNTDOWN_MS, DRAW_WINDOW, ITEM_EVERY_MS, ITEM_FIRST_MS, ITEM_RADIUS, MAX_LAG, MOVING_CHANCE,
+  POWER_UPS, ROUND_LIMIT_MS, ROUND_OVER_MS, SEND_RATE, STEP,
 } from '../shared/constants.js';
 import { MAPS } from '../shared/maps.js';
-import { createWorld, hasMovingLedges, pack, press, step } from '../shared/sim.js';
+import { aimRate, createWorld, geometry, hasMovingLedges, pack, press, spawnItem, step } from '../shared/sim.js';
 
 const TICK_MS = 1000 / SEND_RATE;
 const STEP_MS = STEP * 1000;
@@ -45,6 +46,8 @@ export class BladeTossMatch {
     this.onChange = onChange;
     this.rand = rand;
     this.map = Number.isInteger(map) && MAPS[map] ? map : pickMap(rand);
+    // Matches set up before there were power-ups have none in their options.
+    this.powerUps = options.powerUps !== false;
     this.score = players.map(() => 0);
     // How each finished round went: { winner, reason }, `winner` null when
     // nobody took it.
@@ -68,9 +71,27 @@ export class BladeTossMatch {
   startRound() {
     const moving = hasMovingLedges(this.map) && this.rand() < MOVING_CHANCE;
     this.world = createWorld(this.map, { rand: this.rand, eventId: this.world?.eventId ?? 0, moving });
+    this.itemMsLeft = this.between(ITEM_FIRST_MS);
     this.phaseMsLeft = COUNTDOWN_MS;
     this.roundMsLeft = ROUND_LIMIT_MS;
     this.result = null;
+  }
+
+  between([lo, hi]) {
+    return lo + this.rand() * (hi - lo);
+  }
+
+  // A power-up of any kind, floating at body height or a jump up above the
+  // floor or one of the ledges where they are now.
+  spawnItem() {
+    const geo = geometry(this.world);
+    const kind = POWER_UPS[Math.floor(this.rand() * POWER_UPS.length)];
+    const surface = this.rand() < 0.5 ? geo.surfaces[0] : geo.plats[Math.floor(this.rand() * geo.plats.length)];
+    const lo = Math.max(geo.wl + 40, surface.x1 + ITEM_RADIUS);
+    const hi = Math.min(geo.wr - 40, surface.x2 - ITEM_RADIUS);
+    const x = Math.round(lo + this.rand() * Math.max(0, hi - lo));
+    const y = Math.round(Math.max(CEIL + 40, surface.y - (this.rand() < 0.5 ? 34 : 100)));
+    return spawnItem(this.world, kind, x, y);
   }
 
   get phase() {
@@ -112,6 +133,14 @@ export class BladeTossMatch {
       }
     } else if (w.phase === 'playing') {
       this.roundMsLeft -= STEP_MS;
+      if (this.powerUps) {
+        this.itemMsLeft -= STEP_MS;
+        // One at a time: the next is due a while after the last appeared.
+        if (this.itemMsLeft <= EPS && !w.items.length) {
+          this.spawnItem();
+          this.itemMsLeft = this.between(ITEM_EVERY_MS);
+        }
+      }
       if (w.killT >= 0) {
         w.phase = 'roundOver';
         this.phaseMsLeft = ROUND_OVER_MS;
@@ -190,7 +219,7 @@ export class BladeTossMatch {
     const p = this.world.fighters[seat];
     let phase;
     if (p.sword >= 0 && Number.isFinite(ph)) {
-      const lo = Math.max(p.aimFrom, p.aimPh - AIM_SPEED * MAX_LAG);
+      const lo = Math.max(p.aimFrom, p.aimPh - AIM_SPEED * aimRate(p) * MAX_LAG);
       phase = Math.max(lo, Math.min(p.aimPh + AHEAD, ph));
     }
     if (press(this.world, seat, phase)) this.onChange(this);

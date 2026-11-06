@@ -10,11 +10,21 @@
 // in geometry(world).surfaces (0 the floor, then the ledges), -1 for none.
 // Ledges that move are where world.lt (the time the round has been fought)
 // puts them, so they too come out the same everywhere.
+//
+// Power-ups (world.items) are put in by the server, the only one to roll
+// dice; what happens once one is there is worked out here like the rest. A
+// fighter keeps a shield, a while of steady hand, and one power for its next
+// throw or empty hand (p.power). The extra swords of a triple throw are
+// `temp`: they vanish as soon as they stop flying, and are never picked up;
+// a sword that has gone stays in world.swords as 'gone', so that indexes
+// held elsewhere keep pointing at the right one.
 
 import {
-  AIM_AMP, AIM_MID, AIR_JUMP_SPEED, AIR_JUMPS, BODY_H, BODY_W, BOUNCE_KEEP, CEIL, CEIL_HOLD, CLING_SPEED,
-  DRAW_WINDOW, FLOOR, GRAVITY, JUMP_BUFFER, JUMP_SPEED, NO_PICK, SELF_SAFE, SLOW_SCALE, SLOW_TIME, SWORD_GRAVITY,
-  SWORD_LEN, SWORD_SPEED, WALK_SPEED, WALL_BOUNCES, WALL_GRACE, WALL_HOLD, AIM_SPEED,
+  AIM_AMP, AIM_MID, AIR_JUMP_SPEED, AIR_JUMPS, BODY_H, BODY_W, BOOMERANG_MAX, BOOMERANG_PULL, BOOMERANG_TURN,
+  BOUNCE_KEEP, CEIL, CEIL_HOLD, CLING_SPEED, DRAW_WINDOW, FLOOR, GIANT_SCALE, GIANT_SPEED, GRAVITY, ITEM_LIFE,
+  ITEM_RADIUS, JUMP_BUFFER, JUMP_SPEED, MAGNET_SPEED, NO_PICK, SELF_SAFE, SLOW_SCALE, SLOW_TIME, SPRING_HALF_W,
+  SPRING_LIFE, SPRING_SPEED, STEADY_RATE, STEADY_TIME, SWORD_GRAVITY, SWORD_LEN, SWORD_SPEED, TRIPLE_SPREAD,
+  WALK_SPEED, WALL_BOUNCES, WALL_GRACE, WALL_HOLD, AIM_SPEED,
 } from './constants.js';
 import { MAPS } from './maps.js';
 
@@ -69,14 +79,20 @@ const SWORD_SUBSTEPS = 4;
 export const aimAngle = (p) => AIM_MID + AIM_AMP * Math.sin(p.aimPh);
 export const handOf = (p) => ({ x: p.x + p.facing * 13, y: p.y - 22 });
 const dirOf = (s) => ({ x: Math.cos(s.ang), y: Math.sin(s.ang) });
+// A giant blade is twice as long, until someone picks it up.
+export const lenOf = (s) => (s.giant ? SWORD_LEN * GIANT_SCALE : SWORD_LEN);
 export const tipOf = (s) => {
   const d = dirOf(s);
-  return { x: s.x + (d.x * SWORD_LEN) / 2, y: s.y + (d.y * SWORD_LEN) / 2 };
+  const half = lenOf(s) / 2;
+  return { x: s.x + d.x * half, y: s.y + d.y * half };
 };
 export const hiltOf = (s) => {
   const d = dirOf(s);
-  return { x: s.x - (d.x * SWORD_LEN) / 2, y: s.y - (d.y * SWORD_LEN) / 2 };
+  const half = lenOf(s) / 2;
+  return { x: s.x - d.x * half, y: s.y - d.y * half };
 };
+// Whether the held sword swings slowly just now.
+export const aimRate = (p) => (p.steadyT > 0 ? STEADY_RATE : 1);
 // Whether a point is inside a fighter standing at (bx, by), give or take `pad`.
 export const inBody = (px, py, bx, by, pad = 0) =>
   px >= bx - BODY_W / 2 - pad && px <= bx + BODY_W / 2 + pad && py >= by - BODY_H - pad && py <= by + pad;
@@ -104,10 +120,37 @@ function newFighter(seat, geo, aimPh) {
     wallSide: 0, // -1 the left wall, 1 the right
     noPick: -1, // the sword this fighter just threw, which it cannot take back yet
     noPickT: 0,
+    // Power-ups.
+    shield: false,
+    steadyT: 0, // time left with a steady hand
+    power: '', // for the next throw ('triple', 'laser', 'giant', 'boomerang') or an empty hand ('magnet')
+    springT: 0, // a spring does not launch the same fighter twice at once
     // Once hit: how the body flies.
     dvx: 0,
     rot: 0,
     rv: 0,
+  };
+}
+
+function newSword(holder) {
+  return {
+    x: 0, y: 0, vx: 0, vy: 0, ang: 0,
+    state: 'held', // 'held' | 'flying' | 'stuck' | 'falling' | 'homing' (to a magnet) | 'gone'
+    holder, // who holds it, or who it is homing to
+    on: -1, // the surface it is stuck in
+    bounces: 0, // times this throw has glanced off a wall
+    thrower: -1,
+    flyT: 0,
+    dropT: 0, // while stuck in a wall or the ceiling: time until it falls out
+    wallDir: 0,
+    spin: 0,
+    throwId: -1,
+    group: -1, // the throw it was part of: swords of one triple throw do not clash
+    temp: false,
+    giant: false,
+    laser: false,
+    boomerang: false,
+    returning: false,
   };
 }
 
@@ -127,19 +170,10 @@ export function createWorld(map, { rand = Math.random, eventId = 0, moving = fal
     slowT: 0,
     killT: -1, // seconds since the first hit of the round, -1 before it
     fighters: [0, 1].map((seat) => newFighter(seat, geo, phases[seat])),
-    swords: [0, 1].map((holder) => ({
-      x: 0, y: 0, vx: 0, vy: 0, ang: 0,
-      state: 'held', // 'held' | 'flying' | 'stuck' | 'falling'
-      holder,
-      on: -1, // the surface it is stuck in
-      bounces: 0, // times this throw has glanced off a wall
-      thrower: -1,
-      flyT: 0,
-      dropT: 0, // while stuck in a wall or the ceiling: time until it falls out
-      wallDir: 0,
-      spin: 0,
-      throwId: -1,
-    })),
+    swords: [0, 1].map(newSword),
+    items: [], // power-ups floating in the arena: { id, kind, x, y, t }
+    springs: [], // spring pads on the floor: { x, t }
+    itemId: 0,
     events: [],
     eventId,
     throwId: 0,
@@ -176,23 +210,62 @@ export function press(world, seat, ph) {
   return true;
 }
 
+const THROW_POWERS = new Set(['triple', 'laser', 'giant', 'boomerang']);
+
 function throwSword(world, p) {
   const s = world.swords[p.sword];
+  const power = THROW_POWERS.has(p.power) ? p.power : '';
+  if (power) p.power = '';
   const a = aimAngle(p);
-  const h = handOf(p);
-  const dx = p.facing * Math.cos(a);
-  const dy = -Math.sin(a);
-  Object.assign(s, {
-    state: 'flying', holder: -1, thrower: p.seat, flyT: 0,
-    x: h.x + (dx * SWORD_LEN) / 2, y: h.y + (dy * SWORD_LEN) / 2,
-    vx: dx * SWORD_SPEED, vy: dy * SWORD_SPEED, ang: Math.atan2(dy, dx),
-    throwId: ++world.throwId, bounces: 0, on: -1,
-  });
+  const group = world.throwId + 1;
+  launch(world, p, s, a, power, group);
+  if (power === 'triple') {
+    for (const spread of [-TRIPLE_SPREAD, TRIPLE_SPREAD]) {
+      const extra = newSword(-1);
+      extra.temp = true;
+      world.swords.push(extra);
+      launch(world, p, extra, a + spread, power, group);
+    }
+  }
   p.noPick = p.sword;
   p.noPickT = NO_PICK;
   p.sword = -1;
   p.holdT = 0;
-  emit(world, 'throw', { seat: p.seat, x: s.x, y: s.y });
+  emit(world, 'throw', { seat: p.seat, x: s.x, y: s.y, power });
+}
+
+// Sends sword `s` off from `p`'s hand at angle `a` above the horizontal.
+function launch(world, p, s, a, power, group) {
+  s.giant = power === 'giant';
+  const h = handOf(p);
+  const dx = p.facing * Math.cos(a);
+  const dy = -Math.sin(a);
+  const speed = SWORD_SPEED * (s.giant ? GIANT_SPEED : 1);
+  const half = lenOf(s) / 2;
+  Object.assign(s, {
+    state: 'flying', holder: -1, thrower: p.seat, flyT: 0,
+    x: h.x + dx * half, y: h.y + dy * half,
+    vx: dx * speed, vy: dy * speed, ang: Math.atan2(dy, dx),
+    throwId: ++world.throwId, group, bounces: 0, on: -1,
+    laser: power === 'laser', boomerang: power === 'boomerang', returning: false,
+  });
+}
+
+// A power-up appears; only the server calls this.
+export function spawnItem(world, kind, x, y) {
+  const item = { id: ++world.itemId, kind, x, y, t: 0 };
+  world.items.push(item);
+  emit(world, 'spawn', { kind, x, y });
+  return item;
+}
+
+// What a power-up does for the fighter that takes it.
+function takePower(world, p, item) {
+  if (item.kind === 'shield') p.shield = true;
+  else if (item.kind === 'steady') p.steadyT = STEADY_TIME;
+  else if (item.kind === 'spring') world.springs.push({ x: Math.round(item.x), t: 0 });
+  else p.power = item.kind;
+  emit(world, 'power', { seat: p.seat, kind: item.kind, x: item.x, y: item.y });
 }
 
 function jump(world, p) {
@@ -239,10 +312,27 @@ export function step(world, dt, held = [false, false]) {
   const lt = world.lt;
   if (world.phase !== 'countdown') world.lt += d;
   for (const p of world.fighters) stepFighter(world, p, d, Boolean(held[p.seat]), lt);
-  for (const s of world.swords) {
-    stepSword(world, s, d, lt);
+  world.swords.forEach((s, i) => {
+    stepSword(world, s, d, lt, i);
     keepInArena(world, s);
-  }
+  });
+  if (world.phase !== 'countdown') stepItems(world, d);
+}
+
+// Power-ups float, fade, and go to whoever touches them first; spring pads
+// wear out.
+function stepItems(world, dt) {
+  world.items = world.items.filter((item) => {
+    item.t += dt;
+    if (item.t >= ITEM_LIFE) return false;
+    const p = world.fighters.find((f) => f.alive &&
+      item.x >= f.x - BODY_W / 2 - ITEM_RADIUS && item.x <= f.x + BODY_W / 2 + ITEM_RADIUS &&
+      item.y >= f.y - BODY_H - ITEM_RADIUS && item.y <= f.y + ITEM_RADIUS);
+    if (!p) return true;
+    takePower(world, p, item);
+    return false;
+  });
+  world.springs = world.springs.filter((sp) => (sp.t += dt) < SPRING_LIFE);
 }
 
 // Hits count while the round is on, and for a moment after the first one.
@@ -269,8 +359,10 @@ function stepFighter(world, p, dt, held, lt) {
     return;
   }
 
-  if (p.sword >= 0) { p.aimPh += AIM_SPEED * dt; p.holdT += dt; }
+  if (p.sword >= 0) { p.aimPh += AIM_SPEED * aimRate(p) * dt; p.holdT += dt; }
   if (world.phase === 'countdown') return;
+  if (p.steadyT > 0) p.steadyT = Math.max(0, p.steadyT - dt);
+  if (p.springT > 0) p.springT = Math.max(0, p.springT - dt);
 
   if (p.onGround && p.on > 0) {
     const { dx, dy } = moved(world, p.on, lt, world.lt);
@@ -328,23 +420,56 @@ function stepFighter(world, p, dt, held, lt) {
     if (p.onGround && p.sword < 0) jump(world, p);
   }
 
+  // A spring pad launches whoever runs over it, sword in hand or not.
+  if (p.onGround && p.on === 0 && !p.springT) {
+    const pad = world.springs.find((sp) => Math.abs(sp.x - p.x) < SPRING_HALF_W);
+    if (pad) {
+      p.vy = -SPRING_SPEED;
+      p.onGround = false;
+      p.on = -1;
+      p.springT = 0.4;
+      p.airJumps = AIR_JUMPS;
+      emit(world, 'spring', { seat: p.seat, x: pad.x, y: FLOOR });
+    }
+  }
+
+  // A magnet, once the hand is empty, calls the nearest sword lying about.
+  if (p.power === 'magnet' && p.sword < 0 && !world.swords.some((s) => s.state === 'homing' && s.holder === p.seat)) {
+    let best = -1;
+    let bestD = Infinity;
+    world.swords.forEach((s, i) => {
+      if ((s.state !== 'stuck' && s.state !== 'falling') || s.temp || i === p.noPick) return;
+      const dd = Math.hypot(s.x - p.x, s.y - (p.y - 22));
+      if (dd < bestD) { best = i; bestD = dd; }
+    });
+    if (best >= 0) {
+      const s = world.swords[best];
+      Object.assign(s, { state: 'homing', holder: p.seat, on: -1, dropT: 0, vx: 0, vy: 0 });
+      p.power = '';
+      emit(world, 'magnet', { seat: p.seat, x: s.x, y: s.y });
+    }
+  }
+
   // Running over a sword picks it up, one at a time.
   if (p.sword < 0) {
     world.swords.forEach((s, i) => {
-      if (p.sword >= 0 || (s.state !== 'stuck' && s.state !== 'falling') || i === p.noPick) return;
+      if (p.sword >= 0 || (s.state !== 'stuck' && s.state !== 'falling') || s.temp || i === p.noPick) return;
       const h = hiltOf(s);
-      if (inBody(s.x, s.y, p.x, p.y, 7) || inBody(h.x, h.y, p.x, p.y, 7)) {
-        Object.assign(s, { state: 'held', holder: p.seat, thrower: -1, dropT: 0, on: -1 });
-        p.sword = i;
-        p.holdT = 0;
-        p.cling = false;
-        p.aimPh = -Math.PI / 2 + 0.3; // the swing starts low
-        p.aimFrom = p.aimPh;
-        holdSword(world, s);
-        emit(world, 'pick', { seat: p.seat, x: s.x, y: s.y });
-      }
+      if (inBody(s.x, s.y, p.x, p.y, 7) || inBody(h.x, h.y, p.x, p.y, 7)) take(world, p, s, i);
     });
   }
+}
+
+// Fighter `p` takes sword `s` (number `i`) in hand.
+function take(world, p, s, i) {
+  Object.assign(s, { state: 'held', holder: p.seat, thrower: -1, dropT: 0, on: -1, giant: false, laser: false, boomerang: false, returning: false });
+  p.sword = i;
+  p.holdT = 0;
+  p.cling = false;
+  p.aimPh = -Math.PI / 2 + 0.3; // the swing starts low
+  p.aimFrom = p.aimPh;
+  holdSword(world, s);
+  emit(world, 'pick', { seat: p.seat, x: s.x, y: s.y });
 }
 
 // Puts a held sword in its holder's hand, at the angle of the swing.
@@ -354,12 +479,14 @@ function holdSword(world, s) {
   const h = handOf(p);
   const dx = p.facing * Math.cos(a);
   const dy = -Math.sin(a);
-  s.x = h.x + (dx * SWORD_LEN) / 2;
-  s.y = h.y + (dy * SWORD_LEN) / 2;
+  const half = lenOf(s) / 2;
+  s.x = h.x + dx * half;
+  s.y = h.y + dy * half;
   s.ang = Math.atan2(dy, dx);
 }
 
-function stepSword(world, s, dt, lt) {
+function stepSword(world, s, dt, lt, index) {
+  if (s.state === 'gone') return;
   if (s.state === 'held') { holdSword(world, s); return; }
   if (s.state === 'stuck' && s.on > 0) {
     const { dx, dy } = moved(world, s.on, lt, world.lt);
@@ -367,17 +494,59 @@ function stepSword(world, s, dt, lt) {
     s.y += dy;
   }
   if (world.phase === 'countdown') return; // everything waits for the round to start
+  if (s.state === 'homing') {
+    // Called by a magnet: straight to the hand, harming nobody.
+    const p = world.fighters[s.holder];
+    if (!p.alive || p.sword >= 0) {
+      Object.assign(s, { state: 'falling', holder: -1, vx: 0, vy: 0, spin: 8 });
+      return;
+    }
+    const h = handOf(p);
+    const dx = h.x - s.x;
+    const dy = h.y - s.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 20) { take(world, p, s, index); return; }
+    const k = Math.min(1, (MAGNET_SPEED * dt) / dist);
+    s.x += dx * k;
+    s.y += dy * k;
+    s.vx = (dx / dist) * MAGNET_SPEED;
+    s.vy = (dy / dist) * MAGNET_SPEED;
+    s.ang = Math.atan2(dy, dx);
+    return;
+  }
   if (s.state === 'flying') {
     if (s.waiting) return; // the browser's guess that it hit someone
     s.flyT += dt;
+    const thrower = world.fighters[s.thrower];
+    if (s.boomerang && (s.flyT > BOOMERANG_MAX || !thrower?.alive)) {
+      s.boomerang = false;
+      s.returning = false;
+    }
+    if (s.boomerang && s.flyT > BOOMERANG_TURN) s.returning = true;
     const sdt = dt / SWORD_SUBSTEPS;
     for (let k = 0; k < SWORD_SUBSTEPS; k++) {
       const prevTip = tipOf(s);
-      s.vy += SWORD_GRAVITY * sdt;
+      if (s.returning) {
+        // Heading home: it brakes, turns and makes for the thrower's hand
+        // at the speed it was thrown, rather than looping wide.
+        const h = handOf(thrower);
+        const dx = h.x - s.x;
+        const dy = h.y - s.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const k = Math.min(1, BOOMERANG_PULL * sdt);
+        s.vx += ((dx / dist) * SWORD_SPEED - s.vx) * k;
+        s.vy += ((dy / dist) * SWORD_SPEED - s.vy) * k;
+      } else if (!s.laser) s.vy += SWORD_GRAVITY * sdt;
       s.x += s.vx * sdt;
       s.y += s.vy * sdt;
       s.ang = Math.atan2(s.vy, s.vx);
-      if (collide(world, s, prevTip)) break;
+      if (collide(world, s, prevTip, index)) break;
+    }
+    if (s.state !== 'flying') {
+      s.laser = false;
+      s.boomerang = false;
+      s.returning = false;
+      if (s.temp) s.state = 'gone';
     }
     return;
   }
@@ -438,17 +607,34 @@ function embed(s, axis, target) {
   s.state = 'stuck';
 }
 
-// A flying sword against fighters, the other sword, ledges, floor, walls and
-// ceiling. Returns true once it has stopped flying.
-function collide(world, s, prevTip) {
+// A flying sword against fighters, the other swords, ledges, floor, walls
+// and ceiling. Returns true once it has stopped flying, or turned.
+function collide(world, s, prevTip, index) {
   const geo = geometry(world);
   const t = tipOf(s);
-  const mid = { x: (s.x + t.x) / 2, y: (s.y + t.y) / 2 };
+  // Points along the front of the blade (a giant one reaches further).
+  const points = [0, 0.5, 1].map((k) => ({ x: s.x + (t.x - s.x) * k, y: s.y + (t.y - s.y) * k }));
   for (const p of world.fighters) {
-    if (!p.alive || (p.seat === s.thrower && s.flyT < SELF_SAFE)) continue;
-    if (!(inBody(t.x, t.y, p.x, p.y) || inBody(mid.x, mid.y, p.x, p.y) || inBody(s.x, s.y, p.x, p.y))) continue;
+    if (!p.alive) continue;
+    const touching = points.some((q) => inBody(q.x, q.y, p.x, p.y));
+    if (p.seat === s.thrower && s.returning) {
+      // A boomerang comes back to the hand it left, harmlessly.
+      if (!touching) continue;
+      if (p.sword < 0) take(world, p, s, index);
+      else Object.assign(s, { state: 'falling', vx: 0, vy: -200, spin: 10 });
+      emit(world, 'catch', { seat: p.seat, x: s.x, y: s.y });
+      return true;
+    }
+    if (!touching || (p.seat === s.thrower && s.flyT < SELF_SAFE)) continue;
     if (world.predict) { s.waiting = true; return true; }
     if (!hitsCount(world)) continue;
+    if (p.shield) {
+      // The shield takes it, once: the sword is turned away, harmless.
+      p.shield = false;
+      Object.assign(s, { state: 'falling', on: -1, vx: -s.vx * 0.3, vy: -320, spin: -13 * (Math.sign(s.vx) || 1) });
+      emit(world, 'shield', { seat: p.seat, x: p.x, y: p.y - BODY_H / 2 });
+      return true;
+    }
     hitFighter(world, p, s);
     s.state = 'falling';
     s.on = -1;
@@ -458,7 +644,7 @@ function collide(world, s, prevTip) {
     return true;
   }
   for (const o of world.swords) {
-    if (o === s || o.state !== 'flying' || o.waiting) continue;
+    if (o === s || o.state !== 'flying' || o.waiting || o.group === s.group) continue;
     if (Math.hypot(o.x - s.x, o.y - s.y) < 34) {
       const x = (o.x + s.x) / 2;
       const y = (o.y + s.y) / 2;
@@ -494,7 +680,7 @@ function collide(world, s, prevTip) {
         s.vx = -s.vx * BOUNCE_KEEP;
         s.vy *= BOUNCE_KEEP;
         s.ang = Math.atan2(s.vy, s.vx);
-        s.x = face - side * ((Math.abs(Math.cos(s.ang)) * SWORD_LEN) / 2 + 1);
+        s.x = face - side * ((Math.abs(Math.cos(s.ang)) * lenOf(s)) / 2 + 1);
         emit(world, 'bounce', { x: face, y: t.y, side });
         return true;
       }
@@ -525,7 +711,7 @@ function hitFighter(world, p, s) {
 
 // Nothing ever leaves the arena: a sword that somehow does is laid on the floor.
 function keepInArena(world, s) {
-  if (s.state === 'held') return;
+  if (s.state === 'held' || s.state === 'gone' || s.state === 'homing') return;
   const geo = GEOMETRY[world.map];
   const lost = !Number.isFinite(s.x + s.y) || s.y > FLOOR + 6 || (s.y < CEIL - 40 && s.state !== 'flying') ||
     s.x < geo.wl - 6 || s.x > geo.wr + 6;
@@ -556,6 +742,9 @@ export function pack(world) {
     killT: r3(world.killT),
     eventId: world.eventId,
     throwId: world.throwId,
+    itemId: world.itemId,
+    items: world.items.map((i) => ({ ...i, t: r3(i.t) })),
+    springs: world.springs.map((sp) => ({ ...sp, t: r3(sp.t) })),
     events: world.events,
     fighters: world.fighters.map((p) => ({
       seat: p.seat, x: r1(p.x), y: r1(p.y), vy: r1(p.vy), facing: p.facing, onGround: p.onGround, on: p.on,
@@ -563,11 +752,13 @@ export function pack(world) {
       sword: p.sword, aimPh: r4(p.aimPh), aimFrom: r4(p.aimFrom), holdT: r3(p.holdT), jumpBuf: r3(p.jumpBuf),
       cling: p.cling, wallT: r3(p.wallT), wallSide: p.wallSide, noPick: p.noPick, noPickT: r3(p.noPickT),
       dvx: r1(p.dvx), rot: r3(p.rot), rv: r3(p.rv),
+      shield: p.shield, steadyT: r3(p.steadyT), power: p.power, springT: r3(p.springT),
     })),
     swords: world.swords.map((s) => ({
       x: r1(s.x), y: r1(s.y), vx: r1(s.vx), vy: r1(s.vy), ang: r3(s.ang), state: s.state, holder: s.holder,
       thrower: s.thrower, flyT: r3(s.flyT), dropT: r3(s.dropT), wallDir: s.wallDir, spin: r3(s.spin), throwId: s.throwId,
-      on: s.on, bounces: s.bounces,
+      on: s.on, bounces: s.bounces, group: s.group, temp: s.temp, giant: s.giant, laser: s.laser,
+      boomerang: s.boomerang, returning: s.returning,
     })),
   };
 }
@@ -577,6 +768,8 @@ export function unpack(packed, predict = true) {
   return {
     ...packed,
     events: [],
+    items: (packed.items ?? []).map((i) => ({ ...i })),
+    springs: (packed.springs ?? []).map((sp) => ({ ...sp })),
     fighters: packed.fighters.map((p) => ({ ...p })),
     swords: packed.swords.map((s) => ({ ...s, waiting: false })),
     predict,
