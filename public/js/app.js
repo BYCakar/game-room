@@ -30,6 +30,7 @@ let previewLimit = Infinity; // with more matches than this, boards are not sent
 let past = { games: [], more: false }; // finished matches of the game whose page is open
 let rewatch = null; // id of a match to go back to watching after reconnecting
 let mounted = null; // { game, view }: the game screen currently on the page
+let mountedHome = null; // optional game-specific menu, kept through lobby updates
 let resuming = false; // the next match message continues an old match
 let outgoing = null; // the invitation we sent, if any
 let chat = { id: null, messages: [] }; // what was said in the match with that id
@@ -350,6 +351,7 @@ window.addEventListener('hashchange', applyRoute);
 
 function render() {
   syncFollowing();
+  syncGameHome();
   $('home').hidden = route !== null;
   $('gamePage').hidden = route === null;
   renderGrid();
@@ -361,6 +363,7 @@ function render() {
   $('gameDescription').textContent = meta.description;
   $('gameHint').hidden = Boolean(match);
   $('playBot').hidden = !clients.get(route).botForm;
+  $('playBot').textContent = clients.get(route).botLabel || 'Play the computer';
   // No new games while the server waits to restart.
   $('playBot').disabled = Boolean(restartNotice);
   if (!match) {
@@ -380,6 +383,23 @@ function render() {
     const free = users.some((u) => u.name === rival && (u.status === 'idle' || u.vsBot));
     // A bot is always free for another game.
     $('rematch').disabled = Boolean(restartNotice) || (botOf(match.snapshot) ? false : !free || Boolean(outgoing));
+  }
+}
+
+// Game menus own their listeners just like match views. Do not rebuild a
+// team's editor when another player joins or a live match list refreshes.
+function syncGameHome() {
+  const wanted = route && !match && clients.get(route)?.home ? route : null;
+  if (mountedHome?.game === wanted) return;
+  mountedHome?.view?.destroy?.();
+  mountedHome = null;
+  $('gameHome').replaceChildren();
+  if (wanted) {
+    mountedHome = { game: wanted, view: clients.get(wanted).home($('gameHome'), {
+      toast,
+      playComputer: () => $('playBot').click(),
+      invitePlayer: () => showPlayers(true),
+    }) };
   }
 }
 
